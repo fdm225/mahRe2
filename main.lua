@@ -3,17 +3,18 @@
 -- TELEMETRY
 
 -- File Locations On The Transmitter's SD Card
---  This script file  /SCRIPTS/TELEMETRY/
---  Sound files       /SCRIPTS/TELEMETRY/mahRe2/
+--  This script file  /SCRIPTS/WIDGETS/
+--  Sound files       /SCRIPTS/WIDGETS/mahRe2/sounds/
 
 -- Works On OpenTX Companion Version: 2.2
--- Works With Sensor: FrSky FAS40S
+-- Works With Sensor: FrSky FAS40S, FCS-150A, FAS100, FLVS Voltage Sensors
 --
 -- Author: RCdiy
 -- Web: http://RCdiy.ca
 -- Date: 2016 June 28
 -- Update: 2017 March 27
 -- Update: 2019 November 21 by daveEccleston (Handles sensors returning a table of cell voltages)
+-- Update: 2022 July 15 by David Morrison (Converted to OpenTX Widget for Horus and TX16S radios)
 --
 -- Reauthored: Dean Church
 -- Date: 2017 March 25
