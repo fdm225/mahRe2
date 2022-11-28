@@ -61,7 +61,7 @@
 -- 		800 mAh will be 8
 --
 -- 	 The GVs are global to that model, not between models.
--- 	 Standardize accross your models which GV will be used for battery
+-- 	 Standardize across your models which GV will be used for battery
 -- 		capacity. For each model you can set different battery capacities.
 -- 	  E.g. If you use GV7 for battery capacity/size then
 --					Cargo Plane GV7 = 27
@@ -97,7 +97,7 @@ local Title = "Flight Battery Monitor"
 --  If you need help setting up a consumption sensor visit
 --		http://rcdiy.ca/calculated-sensor-consumption/
 -- Change as desired
-local VoltageSensor = "VFAS" -- optional set to "" to ignore
+local VoltageSensor = "Cel1" -- optional set to "" to ignore
 local mAhSensor = "mAh" -- optional set to "" to ignore
 
 -- Reserve Capacity
@@ -115,7 +115,10 @@ local SwVerboseOnPos = "Down"	-- Up, Mid, Down
 -- Announcements
 local soundDirPath = "/WIDGETS/mahRe2/sounds/" -- where you put the sound files
 local AnnouncePercentRemaining = true -- true to turn on, false for off
-local SillyStuff = true  -- Play some silly/fun sounds
+local SillyStuff = false  -- Play some silly/fun sounds
+
+local CheckBatNotFull = true
+local SwReset = "sh"
 
 -- Do not change the next line
 local GV = {[1] = 0, [2] = 1, [3] = 2,[4] = 3,[5] = 4,[6] = 5, [7] = 6, [8] = 7, [9] = 8}
@@ -124,7 +127,7 @@ local GV = {[1] = 0, [2] = 1, [3] = 2,[4] = 3,[5] = 4,[6] = 5, [7] = 6, [8] = 7,
 --	These are global to the model and not between models.
 --
 --	Each flight mode (FM) has its own set of GVs. Using this script you could
---		be flying in FM 0 but access variables from FM 8. This is usefull when
+--		be flying in FM 0 but access variables from FM 8. This is useful when
 --		when running out of GVs available to use.
 --		Most users can leave the flight mode setting at the default value.
 --
@@ -289,17 +292,57 @@ end
 
 -- ####################################################################
 -- ####################################################################
+local function check_valid_battery_voltage()
+  -- 1. at reset check to see that the cell voltage is > 4.1 for all cellSum
+  -- 2. check to see that all cels are within .1 volts of each other
+  print("check_initial_battery_voltage")
+  if VoltageSensor ~= "" then
+    print("getting VoltageSensor data")
+    cellResult = getValue( VoltageSensor )
+    if (type(cellResult) == "table") then
+      -- check condition 1
+      if (BatUsedmAh == 0) then -- BatUsedmAh is only 0 at reset
+        if CheckBatNotFull == true then
+          playBatNotFullWarning = false
+          for i, v in ipairs(cellResult) do
+            if v < 4.00 then
+              print(string.format("i: %d v: %f", i,v))
+              playBatNotFullWarning = true
+            end
+          end
+          if playBatNotFullWarning == true then
+            playFile(soundDirPath.."BNFull.wav")
+          end
+          CheckBatNotFull = false
+        end -- CheckBatNotfull
+      end -- BatUsedmAh
+      -- check condition 2
+      playInconsistentCellWarning = false
+      for i, v1 in ipairs(cellResult) do
+        for j,v2 in inpairs(cellResult) do
+          if i~j and math.abs(v1 - v2) > .1 then
+            playInconsistentCellWarning = true
+          end
+        end
+      end
+    end
+  end
+end
+
+
+-- ####################################################################
+-- ####################################################################
 local function init_func()
   -- Called once when model is loaded
   BatCapFullmAh = model.getGlobalVariable(GVBatCap, GVFlightMode) * 100
   -- BatCapmAh = BatCapFullmAh
   BatCapmAh = BatCapFullmAh * (100-CapacityReservePercent)/100
   BatRemainmAh = BatCapmAh
-  CellCount = model.getGlobalVariable(GVBatCap, GVCellCount)
+  CellCount = model.getGlobalVariable(GVCellCount, GVFlightMode)
   VoltsPercentRem = 0
   BatRemPer = 0
   AtZeroPlayedCount = 0
-  if (mAhSensor == "") then -- or (BatCapmAh == 0) then
+  if (mAhSensor == "") or (BatCapmAh == 0) then
     UseVoltsNotmAh = true
   else
     UseVoltsNotmAh = false
@@ -314,7 +357,6 @@ local function init_func()
   end
 end
 
-
 -- ####################################################################
 -- ####################################################################
 local function bg_func()
@@ -323,6 +365,15 @@ local function bg_func()
   if SwVerbose ~= "" then
     SwVerbosePos = getValue(SwVerbose)
   end
+
+  if SwReset ~= "" then
+    --print(string.format("SwResetPos: %d", getValue(SwReset)))
+    if -1024 ~= getValue(SwReset) then
+      CheckBatNotFull = true
+      --print("reset event")
+    end
+  end
+
   -- Check in battery capacity was changed
   if BatCapFullmAh ~= model.getGlobalVariable(GVBatCap, GVFlightMode) * 100 then
     init_func()
@@ -369,8 +420,14 @@ local function bg_func()
   if WriteGVBatRemPer == true then
     model.setGlobalVariable(GVBatRemPer, GVFlightMode, BatRemPer)
   end
-  print(string.format("BatRemainmAh: %d", BatRemainmAh))
+  print(string.format("\nBatRemainmAh: %d", BatRemainmAh))
   print(string.format("BatRemPer: %d", BatRemPer))
+  print(string.format("CellCount: %d", CellCount))
+  print(string.format("VoltsMax: %d", VoltsMax))
+  print(string.format("BatUsedmAh: %d", BatUsedmAh))
+
+
+  check_valid_battery_voltage()
 end
 -- ####################################################################
 -- This function returns green at 100%, red bellow 30% and graduate in betwwen
@@ -411,7 +468,7 @@ local function refreshZoneSmall(wgt)
   lcd.drawGauge(wgt.zone.x + 2, wgt.zone.y + 2, myBatt.w - 4, wgt.zone.h, BatRemPer, 100, CUSTOM_COLOR)
 
   -- write text
-  lcd.setColor(CUSTOM_COLOR, options.Color)
+  lcd.setColor(CUSTOM_COLOR, wgt.options.Color)
   local topLine = string.format("%d      %d%%", BatRemainmAh, BatRemPer)
   lcd.drawText(wgt.zone.x + 20, wgt.zone.y + 2, topLine, MIDSIZE + CUSTOM_COLOR + BlinkWhenZero)
 end
@@ -420,7 +477,13 @@ end
 local function refreshZoneMedium(wgt)
   local myBatt = { ["x"] = 0, ["y"] = 0, ["w"] = 85, ["h"] = 35, ["segments_w"] = 15, ["color"] = WHITE, ["cath_w"] = 6, ["cath_h"] = 20 }
   
-  --lcd.setColor(CUSTOM_COLOR, options.Color)
+  lcd.setColor(CUSTOM_COLOR, wgt.options.Color)
+
+  if BatRemPer > 0 then -- Don't blink
+    BlinkWhenZero = 0
+  else
+    BlinkWhenZero = BLINK
+  end
 
   -- draw values
   lcd.drawText(wgt.zone.x, wgt.zone.y + 35, string.format("%d mAh", BatRemainmAh), DBLSIZE + CUSTOM_COLOR + BlinkWhenZero)
@@ -500,9 +563,9 @@ end
 
 local options = {
   { "Current", SOURCE, mAh }, -- Defines source Battery Current Sensor
-  { "Voltage", SOURCE, CELS }, -- Defines source Battery Voltage Sensor
+  { "Voltage", SOURCE, CEL1 }, -- Defines source Battery Voltage Sensor
   { "Color", COLOR, GREY },
-  { "FunStuff", BOOL, 1  }
+  { "FunStuff", BOOL, 0  }
 }
 
 function create(zone, options)
@@ -513,7 +576,8 @@ end
 
 function update(Context, options)
   mAhSensor = options.Current
-  VoltageSensor = options.Voltage
+  --VoltageSensor = options.Voltage
+  Color = options.Color
   Context.options = options
   Context.back = nil
   SillyStuff = options.FunStuff
