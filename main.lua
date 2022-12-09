@@ -119,6 +119,11 @@ local SillyStuff = false  -- Play some silly/fun sounds
 
 local CheckBatNotFull = true
 local SwReset = "sh"
+local BatInconsistentT1 = getTime()
+local playedInconsistentCellWarning = false
+local playInconsistentCellWarning = true
+local inconsistentCellVoltageDetected = false
+local VoltageDelta = .3
 
 -- Do not change the next line
 local GV = {[1] = 0, [2] = 1, [3] = 2,[4] = 3,[5] = 4,[6] = 5, [7] = 6, [8] = 7, [9] = 8}
@@ -316,13 +321,39 @@ local function check_valid_battery_voltage()
           CheckBatNotFull = false
         end -- CheckBatNotfull
       end -- BatUsedmAh
+
       -- check condition 2
-      playInconsistentCellWarning = false
-      for i, v1 in ipairs(cellResult) do
-        for j,v2 in inpairs(cellResult) do
-          if i~j and math.abs(v1 - v2) > .1 then
-            playInconsistentCellWarning = true
+      if inconsistentCellVoltageDetected == false then
+        for i, v1 in ipairs(cellResult) do
+          for j,v2 in ipairs(cellResult) do
+            -- print(string.format("i: %d v: %f j: %d v: %f", i, v1, j,v2))
+            if i~=j and (math.abs(v1 - v2) > VoltageDelta) then
+              if BatInconsistentT1 == nil then
+                BatInconsistentT1 = getTime()
+              end
+              --print(string.format("i: %d v: %f j: %d v: %f", i, v1, j,v2))
+              inconsistentCellVoltageDetected = true
+            end
           end
+        end
+      end
+
+      if inconsistentCellVoltageDetected == true then
+        currTime = getTime()
+        deltaTime = currTime - BatInconsistentT1
+        deltaSeconds = deltaTime/100
+        deltaTimeMod = deltaSeconds % 10
+        print(string.format("deltaTime: %d deltaSeconds: %d deltaTimeMod: %d", deltaTime, deltaSeconds, deltaTimeMod))
+        print(type(deltaTimeMod))
+        print(type(0))
+        print(math.abs( deltaTimeMod - 0 ) < 1)
+        if playInconsistentCellWarning == true and (math.abs( deltaTimeMod - 0 ) < 1) then
+          playFile(soundDirPath.."icw.wav")
+          playInconsistentCellWarning = false
+        end
+
+        if (math.abs( deltaTimeMod - 0 ) > 1) then
+          playInconsistentCellWarning = true
         end
       end
     end
@@ -368,8 +399,11 @@ local function bg_func()
 
   if SwReset ~= "" then
     --print(string.format("SwResetPos: %d", getValue(SwReset)))
-    if -1024 ~= getValue(SwReset) then
+    if -1024 ~= getValue(SwReset) then -- reset switch
       CheckBatNotFull = true
+      BatInconsistentT1 = nil
+      playInconsistentCellWarning = true
+      inconsistentCellVoltageDetected = false
       --print("reset event")
     end
   end
