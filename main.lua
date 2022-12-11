@@ -20,11 +20,16 @@
 -- Date: 2017 March 25
 -- Thanks: TrueBuild (ideas)
 --
+-- Re-Reauthored: David Morrison
+-- Date: 2022 December 1
+--
 -- Changes/Additions:
 -- 	Choose between using consumption sensor or voltage sensor to calculate
 --		battery capacity remaining.
 --	Choose between simple and detailed display.
 --  Voice announcements of percentage remaining during active use.
+--  After reset, warn if battery is not fully charged
+--  After reset, check cells to verify that they are within VoltageDelta of each other
 
 
 -- Description
@@ -37,22 +42,21 @@
 --			http://rcdiy.ca/calculated-sensor-consumption/
 -- 	Displays remaining battery mAh and percent based on mAh used
 -- 	Displays battery voltage and remaining percent based on volts
---  Displays details such as minumum voltage, maximum current, mAh used, # of cells
---	Switchs between simple and detailed display using a switch
---		Switch is optional and configurable, SF down by default
+--  Displays details such as minimum voltage, maximum current, mAh used, # of cells
 -- 	Write remaining battery mAh to a Tx global variable
 -- 	Write remaining battery percent to a Tx global variable
 -- 		Writes are optional, off by default
 --	Announces percentage remaining every 10% change
---		Announcements are optional, off by default
+--		Announcements are optional, on by default
 -- Reserve Percentage
 -- 	All values are calculated with reference to this reserve.
 --	% Remaining = Estimated % Remaining - Reserve %
 --	mAh Remaining = Calculated mAh Remaining - (Size mAh x Reserve %)
 --	The reserve is configurable, 20% is the set default
--- 	The following is an example of what is dislayed at start up
+-- 	The following is an example of what is displayed at start up
 -- 		800mAh remaining for a 1000mAh battery
 --		80% remaining
+--
 --
 -- 	Notes & Suggestions
 -- 		The OpenTX global variables (GV) have a 1024 limit.
@@ -105,25 +109,19 @@ local mAhSensor = "mAh" -- optional set to "" to ignore
 -- Change as desired
 local CapacityReservePercent = 20 -- set to zero to disable
 
---	Switch between simple and detailed display using a switch
--- 	SA to SH Taranis X9 series, Q X7 missing switches SE and SG
--- 	Use "sa" for switch A and so on.
--- 	Change as desired
-local SwVerbose = "sf"	-- "" to ignore
-local SwVerboseOnPos = "Down"	-- Up, Mid, Down
+-- Switch used to reset the voltage checking features.
+--  typically set to the same switch used to reset timers
+local SwReset = "sh"
+
+--   Value used to when comparing cell voltages to each other.
+--    if any cell gets >= VoltageDelta volts of the other cells
+--    then play the Inconsistent Cell Warning message
+local VoltageDelta = .3
 
 -- Announcements
 local soundDirPath = "/WIDGETS/mahRe2/sounds/" -- where you put the sound files
 local AnnouncePercentRemaining = true -- true to turn on, false for off
 local SillyStuff = false  -- Play some silly/fun sounds
-
-local CheckBatNotFull = true
-local SwReset = "sh"
-local BatInconsistentT1 = getTime()
-local playedInconsistentCellWarning = false
-local playInconsistentCellWarning = true
-local inconsistentCellVoltageDetected = false
-local VoltageDelta = .3
 
 -- Do not change the next line
 local GV = {[1] = 0, [2] = 1, [3] = 2,[4] = 3,[5] = 4,[6] = 5, [7] = 6, [8] = 7, [9] = 8}
@@ -182,6 +180,12 @@ local VoltsNow 				-- updated in bg_func
 local CellCount 			-- updated in init_func, bg_func
 local VoltsMax 				-- updated in bg_func
 
+-- Voltage Checking flags
+local CheckBatNotFull = true
+local BatInconsistentT1 = getTime()
+local PlayInconsistentCellWarning = true
+local InconsistentCellVoltageDetected = false
+
 -- Announcements
 local BatRemPerFileName = 0		-- updated in PlayPercentRemaining
 local BatRemPerPlayed = 0			-- updated in PlayPercentRemaining
@@ -191,12 +195,6 @@ local PlayAtZero = 1
 --local BatteryFound = false
 
 -- Display
-local SwVerbosePos = -1			-- updated in bg_func
-local SwUp = -1024 	-- value returned for switch in up/away position
-local SwMid = 0
-local SwDown = 1024
-local SwVerboseOnValue = 0
-
 local x, y, fontSize, yColumn2
 local xAlign = 0
 
@@ -323,7 +321,7 @@ local function check_valid_battery_voltage()
       end -- BatUsedmAh
 
       -- check condition 2
-      if inconsistentCellVoltageDetected == false then
+      if InconsistentCellVoltageDetected == false then
         for i, v1 in ipairs(cellResult) do
           for j,v2 in ipairs(cellResult) do
             -- print(string.format("i: %d v: %f j: %d v: %f", i, v1, j,v2))
@@ -332,13 +330,13 @@ local function check_valid_battery_voltage()
                 BatInconsistentT1 = getTime()
               end
               --print(string.format("i: %d v: %f j: %d v: %f", i, v1, j,v2))
-              inconsistentCellVoltageDetected = true
+              InconsistentCellVoltageDetected = true
             end
           end
         end
       end
 
-      if inconsistentCellVoltageDetected == true then
+      if InconsistentCellVoltageDetected == true then
         currTime = getTime()
         deltaTime = currTime - BatInconsistentT1
         deltaSeconds = deltaTime/100
@@ -347,13 +345,13 @@ local function check_valid_battery_voltage()
         print(type(deltaTimeMod))
         print(type(0))
         print(math.abs( deltaTimeMod - 0 ) < 1)
-        if playInconsistentCellWarning == true and (math.abs( deltaTimeMod - 0 ) < 1) then
+        if PlayInconsistentCellWarning == true and (math.abs( deltaTimeMod - 0 ) < 1) then
           playFile(soundDirPath.."icw.wav")
-          playInconsistentCellWarning = false
+          PlayInconsistentCellWarning = false
         end
 
         if (math.abs( deltaTimeMod - 0 ) > 1) then
-          playInconsistentCellWarning = true
+          PlayInconsistentCellWarning = true
         end
       end
     end
@@ -378,32 +376,19 @@ local function init_func()
   else
     UseVoltsNotmAh = false
   end
-
-  if SwVerboseOnPos == "Up" then
-    SwVerboseOnValue = SwUp
-  elseif SwVerboseOnPos == "Mid" then
-    SwVerboseOnValue = SwMid
-  elseif SwVerboseOnPos == "Down" then
-    SwVerboseOnValue = SwDown
-  end
 end
 
 -- ####################################################################
 -- ####################################################################
 local function bg_func()
   -- Update switch position
-  
-  if SwVerbose ~= "" then
-    SwVerbosePos = getValue(SwVerbose)
-  end
-
   if SwReset ~= "" then
     --print(string.format("SwResetPos: %d", getValue(SwReset)))
     if -1024 ~= getValue(SwReset) then -- reset switch
       CheckBatNotFull = true
       BatInconsistentT1 = nil
-      playInconsistentCellWarning = true
-      inconsistentCellVoltageDetected = false
+      PlayInconsistentCellWarning = true
+      InconsistentCellVoltageDetected = false
       --print("reset event")
     end
   end
