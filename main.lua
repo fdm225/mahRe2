@@ -182,8 +182,11 @@ local VoltsMax 				-- updated in bg_func
 
 -- Voltage Checking flags
 local CheckBatNotFull = true
-local BatInconsistentT1 = getTime()
-local PlayInconsistentCellWarning = true
+local StartTime = getTime()
+local PlayFirstInconsistentCellWarning = true
+local PlayInconsistentCellWarning = false
+local PlayFirstMissingCellWarning = true
+local PlayMissingCellWarning = true
 local InconsistentCellVoltageDetected = false
 
 -- Announcements
@@ -293,17 +296,108 @@ local function PlayPercentRemaining()
 
 end
 
+local function HasSecondsElapsed(numSeconds)
+  -- return true every numSeconds
+  if StartTime == nil then
+    StartTime = getTime()
+  end
+  currTime = getTime()
+  deltaTime = currTime - StartTime
+  deltaSeconds = deltaTime/100 -- covert to seconds
+  deltaTimeMod = deltaSeconds % numSeconds -- return the modulus
+  print(string.format("deltaTime: %d deltaSeconds: %d deltaTimeMod: %d", deltaTime, deltaSeconds, deltaTimeMod))
+  if math.abs( deltaTimeMod - 0 ) < 1 then
+    return true
+  else
+    return false
+  end
+end
+
+local function check_cell_delta_voltage()
+    for i, v1 in ipairs(cellResult) do
+      for j,v2 in ipairs(cellResult) do
+        -- print(string.format("i: %d v: %f j: %d v: %f", i, v1, j,v2))
+        if i~=j and (math.abs(v1 - v2) > VoltageDelta) then
+          --print(string.format("i: %d v: %f j: %d v: %f", i, v1, j,v2))
+          timeElapsed = HasSecondsElapsed(10)  -- check to see if the 10 second timer has elapsed
+          if PlayFirstInconsistentCellWarning or (PlayInconsistentCellWarning == true and timeElapsed) then -- Play immediately upon detection and then every 10 seconds
+            playFile(soundDirPath.."icw.wav")
+            PlayFirstInconsistentCellWarning = false -- clear the first play flag, only reset on reset switch toggle
+            PlayInconsistentCellWarning = false -- clear the playing flag, only reset it at 10 second intervals
+          end
+          if not timeElapsed then  -- debounce so the sound is only played once in 10 seconds
+            PlayInconsistentCellWarning = true
+          end
+          return
+        end
+      end
+    end
+end
+
+--local function check_cell_delta_voltage()
+--  if InconsistentCellVoltageDetected == false then -- If this condition is detected the only way to clear the alarm is via the reset switch
+--        for i, v1 in ipairs(cellResult) do
+--          for j,v2 in ipairs(cellResult) do
+--            -- print(string.format("i: %d v: %f j: %d v: %f", i, v1, j,v2))
+--            if i~=j and (math.abs(v1 - v2) > VoltageDelta) then
+--              --print(string.format("i: %d v: %f j: %d v: %f", i, v1, j,v2))
+--              InconsistentCellVoltageDetected = true
+--            end
+--          end
+--        end
+--      end
+--
+--  timeElapsed = HasSecondsElapsed(10)
+--  if InconsistentCellVoltageDetected == true then
+--    if PlayInconsistentCellWarning == true and timeElapsed then
+--      playFile(soundDirPath.."icw.wav")
+--      PlayInconsistentCellWarning = false
+--    end
+--
+--  if not timeElapsed then  -- debounce so the sound is only played once in 10 seconds
+--    PlayInconsistentCellWarning = true
+--  end
+--  end
+--end
+
+local function check_for_missing_cels()
+  -- If the number of cells detected by the voltage sensor does not match the value in GV6 then play the warning message
+  if CellCount > 0 then
+    tableSize = 0 -- Initialize the counter for the cell table size
+    for i, v in ipairs(cellResult) do
+      tableSize = tableSize + 1
+    end
+    print(string.format("CellCount: %d tableSize: %d", CellCount, tableSize))
+    if tableSize ~= CellCount then
+      print("tableSize =~= CellCount: missing cell detected")
+      timeElapsed = HasSecondsElapsed(10)
+      if PlayFirstMissingCellWarning or (PlayMissingCellWarning and timeElapsed) then -- Play immediately and then every 10 seconds
+        --playFile(soundDirPath.."mcw.wav")
+        print("play missing cell wav")
+        PlayMissingCellWarning = false
+        PlayFirstMissingCellWarning = false
+      end
+      if not timeElapsed then  -- debounce so the sound is only played once in 10 seconds
+        PlayMissingCellWarning = true
+      end
+    end
+  end
+end
+
 -- ####################################################################
 -- ####################################################################
 local function check_valid_battery_voltage()
   -- 1. at reset check to see that the cell voltage is > 4.1 for all cellSum
-  -- 2. check to see that all cels are within .1 volts of each other
+  -- 2. check to see that all cells are within VoltageDelta volts of each other
+  -- 3. if number of cells are set in GV6, check to see that all are showing voltage
+
   print("check_initial_battery_voltage")
   if VoltageSensor ~= "" then
     print("getting VoltageSensor data")
     cellResult = getValue( VoltageSensor )
     if (type(cellResult) == "table") then
-      -- check condition 1
+
+      -- check condition 1: at reset that all voltages > 4.0 volts
       if (BatUsedmAh == 0) then -- BatUsedmAh is only 0 at reset
         if CheckBatNotFull == true then
           playBatNotFullWarning = false
@@ -320,40 +414,11 @@ local function check_valid_battery_voltage()
         end -- CheckBatNotfull
       end -- BatUsedmAh
 
-      -- check condition 2
-      if InconsistentCellVoltageDetected == false then
-        for i, v1 in ipairs(cellResult) do
-          for j,v2 in ipairs(cellResult) do
-            -- print(string.format("i: %d v: %f j: %d v: %f", i, v1, j,v2))
-            if i~=j and (math.abs(v1 - v2) > VoltageDelta) then
-              if BatInconsistentT1 == nil then
-                BatInconsistentT1 = getTime()
-              end
-              --print(string.format("i: %d v: %f j: %d v: %f", i, v1, j,v2))
-              InconsistentCellVoltageDetected = true
-            end
-          end
-        end
-      end
+      -- check condition 2: delta voltage
+      check_cell_delta_voltage()
 
-      if InconsistentCellVoltageDetected == true then
-        currTime = getTime()
-        deltaTime = currTime - BatInconsistentT1
-        deltaSeconds = deltaTime/100
-        deltaTimeMod = deltaSeconds % 10
-        print(string.format("deltaTime: %d deltaSeconds: %d deltaTimeMod: %d", deltaTime, deltaSeconds, deltaTimeMod))
-        print(type(deltaTimeMod))
-        print(type(0))
-        print(math.abs( deltaTimeMod - 0 ) < 1)
-        if PlayInconsistentCellWarning == true and (math.abs( deltaTimeMod - 0 ) < 1) then
-          playFile(soundDirPath.."icw.wav")
-          PlayInconsistentCellWarning = false
-        end
-
-        if (math.abs( deltaTimeMod - 0 ) > 1) then
-          PlayInconsistentCellWarning = true
-        end
-      end
+      -- check condition 3: all cells present
+      check_for_missing_cels()
     end
   end
 end
@@ -386,8 +451,11 @@ local function bg_func()
     --print(string.format("SwResetPos: %d", getValue(SwReset)))
     if -1024 ~= getValue(SwReset) then -- reset switch
       CheckBatNotFull = true
-      BatInconsistentT1 = nil
+      StartTime = nil
       PlayInconsistentCellWarning = true
+      PlayFirstMissingCellWarning = true
+      PlayMissingCellWarning = true
+      PlayFirstInconsistentCellWarning = true
       InconsistentCellVoltageDetected = false
       --print("reset event")
     end
@@ -444,8 +512,6 @@ local function bg_func()
   print(string.format("CellCount: %d", CellCount))
   print(string.format("VoltsMax: %d", VoltsMax))
   print(string.format("BatUsedmAh: %d", BatUsedmAh))
-
-
   check_valid_battery_voltage()
 end
 -- ####################################################################
