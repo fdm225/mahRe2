@@ -380,7 +380,7 @@ local function check_for_missing_cells()
 end
 
 -- ####################################################################
-local function check_valid_battery_voltage()
+local function flvss_voltage_sensor_tests()
   -- 1. at reset check to see that the cell voltage is > 4.1 for all cellSum
   -- 2. check to see that all cells are within VoltageDelta volts of each other
   -- 3. if number of cells are set in GV6, check to see that all are showing voltage
@@ -403,8 +403,6 @@ local function check_valid_battery_voltage()
   end
 end
 
-
--- ####################################################################
 -- ####################################################################
 local function init_func()
   -- Called once when model is loaded
@@ -423,11 +421,9 @@ local function init_func()
   end
 end
 
--- ####################################################################
--- ####################################################################
-local function bg_func()
-  -- Update switch position
-  if SwReset ~= "" then
+local function reset_if_needed()
+  -- test if the reset switch is toggled, if so then reset all internal flags
+  if SwReset ~= "" then -- Update switch position
     --print(string.format("SwResetPos: %d", getValue(SwReset)))
     if -1024 ~= getValue(SwReset) then -- reset switch
       CheckBatNotFull = true
@@ -440,7 +436,12 @@ local function bg_func()
       --print("reset event")
     end
   end
+end
 
+-- ####################################################################
+local function bg_func()
+
+  reset_if_needed() -- test if the reset switch is toggled, if so then reset all internal flags
   -- Check in battery capacity was changed
   if BatCapFullmAh ~= model.getGlobalVariable(GVBatCap, GVFlightMode) * 100 then
     init_func()
@@ -492,11 +493,12 @@ local function bg_func()
   print(string.format("CellCount: %d", CellCount))
   print(string.format("VoltsMax: %d", VoltsMax))
   print(string.format("BatUsedmAh: %d", BatUsedmAh))
-  check_valid_battery_voltage()
+  flvss_voltage_sensor_tests()
 end
+
 -- ####################################################################
--- This function returns green at 100%, red bellow 30% and graduate in betwwen
 local function getPercentColor(cpercent)
+  -- This function returns green at 100%, red bellow 30% and graduate in between
   if cpercent < 30 then
     return lcd.RGB(0xff, 0, 0)
   else
@@ -505,10 +507,11 @@ local function getPercentColor(cpercent)
     return lcd.RGB(r, g, 0)
   end
 end
+
 -- ####################################################################
--- This size is for top bar wgts
---- Zone size: 70x39 1/8th top bar
 local function refreshZoneTiny(wgt)
+  -- This size is for top bar wgts
+  --- Zone size: 70x39 1/8th top bar
   local myString = string.format("%d", BatRemainmAh)
   lcd.drawText(wgt.zone.x + wgt.zone.w -25, wgt.zone.y + 5, BatRemPer .. "%", RIGHT + SMLSIZE + CUSTOM_COLOR + BlinkWhenZero)
   lcd.drawText(wgt.zone.x + wgt.zone.w -25, wgt.zone.y + 20, myString, RIGHT + SMLSIZE + CUSTOM_COLOR + BlinkWhenZero)
@@ -520,8 +523,8 @@ local function refreshZoneTiny(wgt)
 end
 
 -- ####################################################################
---- Size is 160x32 1/8th
 local function refreshZoneSmall(wgt)
+  --- Size is 160x32 1/8th
   local myBatt = { ["x"] = 0, ["y"] = 0, ["w"] = 155, ["h"] = 35, ["segments_w"] = 25, ["color"] = WHITE, ["cath_w"] = 6, ["cath_h"] = 20 }
 
   -- draws bat
@@ -537,9 +540,10 @@ local function refreshZoneSmall(wgt)
   local topLine = string.format("%d      %d%%", BatRemainmAh, BatRemPer)
   lcd.drawText(wgt.zone.x + 20, wgt.zone.y + 2, topLine, MIDSIZE + CUSTOM_COLOR + BlinkWhenZero)
 end
+
 -- ####################################################################
---- Size is 225x98 1/4th  (no sliders/trim)
 local function refreshZoneMedium(wgt)
+  --- Size is 225x98 1/4th  (no sliders/trim)
   local myBatt = { ["x"] = 0, ["y"] = 0, ["w"] = 85, ["h"] = 35, ["segments_w"] = 15, ["color"] = WHITE, ["cath_w"] = 6, ["cath_h"] = 20 }
   
   lcd.setColor(CUSTOM_COLOR, wgt.options.Color)
@@ -565,9 +569,9 @@ local function refreshZoneMedium(wgt)
 
 end
 
---- Size is 192x152 1/2
+-- ####################################################################
 local function refreshZoneLarge(wgt)
-  
+  --- Size is 192x152 1/2
   lcd.setColor(CUSTOM_COLOR, wgt.options.Color)
   
   fontSize = 10
@@ -588,10 +592,11 @@ local function refreshZoneLarge(wgt)
   lcd.drawGauge(wgt.zone.x , (wgt.zone.y + (wgt.zone.h - 30)), wgt.zone.w, 30, BatRemPer, 100, BlinkWhenZero)
 end
 
---- Size is 390x172 1/1
---- Size is 460x252 1/1 (no sliders/trim/topbar)
+-- ####################################################################
 local function refreshZoneXLarge(wgt)
-lcd.setColor(CUSTOM_COLOR, wgt.options.Color)
+  --- Size is 390x172 1/1
+  --- Size is 460x252 1/1 (no sliders/trim/topbar)
+  lcd.setColor(CUSTOM_COLOR, wgt.options.Color)
   local CUSTOM_COLOR = WHITE
   fontSize = 10
   
@@ -612,7 +617,7 @@ lcd.setColor(CUSTOM_COLOR, wgt.options.Color)
   lcd.drawGauge(wgt.zone.x , (wgt.zone.y + (wgt.zone.h - 30)), wgt.zone.w, 30, BatRemPer, 100, BlinkWhenZero)
 end
 
-
+-- ####################################################################
 local function run_func(wgt)	-- Called periodically when screen is visible
   bg_func()
   if     wgt.zone.w  > 380 and wgt.zone.h > 165 then refreshZoneXLarge(wgt)
@@ -623,22 +628,14 @@ local function run_func(wgt)	-- Called periodically when screen is visible
   end
 end
 
---return { run=run_func, background=bg_func, init=init_func	}
--- new code below
-
-local options = {
-  { "Current", SOURCE, mAh }, -- Defines source Battery Current Sensor
-  { "Voltage", SOURCE, CEL1 }, -- Defines source Battery Voltage Sensor
-  { "Color", COLOR, GREY },
-  { "FunStuff", BOOL, 0  }
-}
-
+-- ####################################################################
 function create(zone, options)
   init_func()
   local Context = { zone=zone, options=options }
   return Context
 end
 
+-- ####################################################################
 function update(Context, options)
   mAhSensor = options.Current
   --VoltageSensor = options.Voltage
@@ -648,12 +645,21 @@ function update(Context, options)
   SillyStuff = options.FunStuff
 end
 
+-- ####################################################################
 function background(Context)
   bg_func()
 end
 
+-- ####################################################################
 function refresh(Context)
   run_func(Context)
 end
+
+local options = {
+  { "Current", SOURCE, mAh }, -- Defines source Battery Current Sensor
+  { "Voltage", SOURCE, CEL1 }, -- Defines source Battery Voltage Sensor
+  { "Color", COLOR, GREY },
+  { "FunStuff", BOOL, 0  }
+}
 
 return { name="mahRe2", options=options, create=create, update=update, refresh=refresh, background=background }
