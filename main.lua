@@ -113,6 +113,9 @@ local CapacityReservePercent = 20 -- set to zero to disable
 --  typically set to the same switch used to reset timers
 local SwReset = "sh"
 
+--   Value used when checking to see if the cell is full for the check_for_full_battery check
+local CellFullVoltage = 4.0
+
 --   Value used to when comparing cell voltages to each other.
 --    if any cell gets >= VoltageDelta volts of the other cells
 --    then play the Inconsistent Cell Warning message
@@ -254,7 +257,6 @@ local function findPercentRem( cellVoltage )
 end
 
 -- ####################################################################
--- ####################################################################
 local function PlayPercentRemaining()
   -- Announces percent remaining using the accompanying sound files.
   -- Announcements ever 10% change when percent remaining is above 10 else
@@ -288,14 +290,9 @@ local function PlayPercentRemaining()
   elseif AtZeroPlayedCount == PlayAtZero and BatRemPer > 0 then
     AtZeroPlayedCount = 0
   end
-  -- elseif BatRemPer > 0 and AtZeroPlayedCount == PlayAtZero then
-  -- 	-- Will happen when voltage based battery remaining percent
-  -- 	-- Battery replaced without a Tx telemetry reset, model change or off+on
-  -- 	AtZeroPlayedCount = 0
-  -- end
-
 end
 
+-- ####################################################################
 local function HasSecondsElapsed(numSeconds)
   -- return true every numSeconds
   if StartTime == nil then
@@ -313,7 +310,30 @@ local function HasSecondsElapsed(numSeconds)
   end
 end
 
+-- ####################################################################
+local function check_for_full_battery()
+  -- check condition 1: at reset that all voltages > CellFullVoltage volts
+  if (BatUsedmAh == 0) then -- BatUsedmAh is only 0 at reset
+    if CheckBatNotFull == true then
+      playBatNotFullWarning = false
+      for i, v in ipairs(cellResult) do
+        if v < CellFullVoltage then
+          print(string.format("i: %d v: %f", i,v))
+          playBatNotFullWarning = true
+        end
+      end
+      if playBatNotFullWarning == true then
+        playFile(soundDirPath.."BNFull.wav")
+      end
+      CheckBatNotFull = false
+    end -- CheckBatNotfull
+  end -- BatUsedmAh
+end
+
+-- ####################################################################
 local function check_cell_delta_voltage()
+  -- Check to see if all cells are within VoltageDelta volts of each other
+  --  default is .3 volts, can be changed above
     for i, v1 in ipairs(cellResult) do
       for j,v2 in ipairs(cellResult) do
         -- print(string.format("i: %d v: %f j: %d v: %f", i, v1, j,v2))
@@ -334,33 +354,8 @@ local function check_cell_delta_voltage()
     end
 end
 
---local function check_cell_delta_voltage()
---  if InconsistentCellVoltageDetected == false then -- If this condition is detected the only way to clear the alarm is via the reset switch
---        for i, v1 in ipairs(cellResult) do
---          for j,v2 in ipairs(cellResult) do
---            -- print(string.format("i: %d v: %f j: %d v: %f", i, v1, j,v2))
---            if i~=j and (math.abs(v1 - v2) > VoltageDelta) then
---              --print(string.format("i: %d v: %f j: %d v: %f", i, v1, j,v2))
---              InconsistentCellVoltageDetected = true
---            end
---          end
---        end
---      end
---
---  timeElapsed = HasSecondsElapsed(10)
---  if InconsistentCellVoltageDetected == true then
---    if PlayInconsistentCellWarning == true and timeElapsed then
---      playFile(soundDirPath.."icw.wav")
---      PlayInconsistentCellWarning = false
---    end
---
---  if not timeElapsed then  -- debounce so the sound is only played once in 10 seconds
---    PlayInconsistentCellWarning = true
---  end
---  end
---end
-
-local function check_for_missing_cels()
+-- ####################################################################
+local function check_for_missing_cells()
   -- If the number of cells detected by the voltage sensor does not match the value in GV6 then play the warning message
   if CellCount > 0 then
     tableSize = 0 -- Initialize the counter for the cell table size
@@ -385,7 +380,6 @@ local function check_for_missing_cels()
 end
 
 -- ####################################################################
--- ####################################################################
 local function check_valid_battery_voltage()
   -- 1. at reset check to see that the cell voltage is > 4.1 for all cellSum
   -- 2. check to see that all cells are within VoltageDelta volts of each other
@@ -398,27 +392,13 @@ local function check_valid_battery_voltage()
     if (type(cellResult) == "table") then
 
       -- check condition 1: at reset that all voltages > 4.0 volts
-      if (BatUsedmAh == 0) then -- BatUsedmAh is only 0 at reset
-        if CheckBatNotFull == true then
-          playBatNotFullWarning = false
-          for i, v in ipairs(cellResult) do
-            if v < 4.00 then
-              print(string.format("i: %d v: %f", i,v))
-              playBatNotFullWarning = true
-            end
-          end
-          if playBatNotFullWarning == true then
-            playFile(soundDirPath.."BNFull.wav")
-          end
-          CheckBatNotFull = false
-        end -- CheckBatNotfull
-      end -- BatUsedmAh
+      check_for_full_battery()
 
       -- check condition 2: delta voltage
       check_cell_delta_voltage()
 
       -- check condition 3: all cells present
-      check_for_missing_cels()
+      check_for_missing_cells()
     end
   end
 end
