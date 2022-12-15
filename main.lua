@@ -101,7 +101,7 @@ local Title = "Flight Battery Monitor"
 --  If you need help setting up a consumption sensor visit
 --		http://rcdiy.ca/calculated-sensor-consumption/
 -- Change as desired
-local VoltageSensor = "Cel1" -- optional set to "" to ignore
+local VoltageSensor = "Cels" -- optional set to "" to ignore
 local mAhSensor = "mAh" -- optional set to "" to ignore
 
 -- Reserve Capacity
@@ -323,25 +323,27 @@ local function check_for_full_battery(voltageSensorValue)
   if BatUsedmAh == 0 then -- BatUsedmAh is only 0 at reset
     print(string.format("CheckBatNotFull: %s type: %s", CheckBatNotFull, type(voltageSensorValue)))
     if CheckBatNotFull then  -- global variable to gate this so this check is only done once after reset
-      CheckBatNotFull = false  -- since we have done the check, set to false so it is not ran again
       playBatNotFullWarning = false
       if (type(voltageSensorValue) == "table") then -- check to see if this is the dedicated voltage sensor
+        print("flvss cell detection")
         for i, v in ipairs(voltageSensorValue) do
           if v < CellFullVoltage then
-            print(string.format("i: %d v: %f", i,v))
+            --print(string.format("flvss i: %d v: %f", i,v))
             playBatNotFullWarning = true
             break
           end
         end
-      elseif type(voltageSensorValue) == "number" then --this is for the vfas sensor
-        print(string.format("voltageSensorValue: %f", voltageSensorValue))
+        CheckBatNotFull = false  -- since we have done the check, set to false so it is not ran again
+      elseif VoltageSensor == "VFAS" and type(voltageSensorValue) == "number" then --this is for the vfas sensor
+        print(string.format("vfas: %f", voltageSensorValue))
         --(string.format("vfas value: %d", voltageSensorValue))
         if voltageSensorValue < (CellFullVoltage - .001) then
-          print("vfas cell not full detected")
+          --print("vfas cell not full detected")
           playBatNotFullWarning = true
         end
+        CheckBatNotFull = false  -- since we have done the check, set to false so it is not ran again
       end
-      if playBatNotFullWarning == true then
+      if playBatNotFullWarning then
         playFile(soundDirPath.."BNFull.wav")
         playBatNotFullWarning = false
       end
@@ -379,6 +381,7 @@ end
 local function check_for_missing_cells(voltageSensorValue)
   -- If the number of cells detected by the voltage sensor does not match the value in GV6 then play the warning message
   -- This is only for the dedicated voltage sensor
+  print(string.format("CellCount: %d voltageSensorValue:", CellCount))
   if CellCount > 0 then
     missingCellDetected = false
     if (type(voltageSensorValue) == "table") then
@@ -391,7 +394,7 @@ local function check_for_missing_cells(voltageSensorValue)
         --print(string.format("CellCount: %d tableSize: %d", CellCount, tableSize))
         missingCellDetected = true
       end
-    else
+    elseif VoltageSensor == "VFAS" and type(voltageSensorValue) == "number" then --this is for the vfas sensor
       if (CellCount * 3.2) > (voltageSensorValue) then
         --print(string.format("vfas missing cell: %d", voltageSensorValue))
         missingCellDetected = true
@@ -403,7 +406,7 @@ local function check_for_missing_cells(voltageSensorValue)
       timeElapsed = HasSecondsElapsed(10)
       if PlayFirstMissingCellWarning or (PlayMissingCellWarning and timeElapsed) then -- Play immediately and then every 10 seconds
         --playFile(soundDirPath.."mcw.wav")
-        --print("play missing cell wav")
+        print("play missing cell wav")
         PlayMissingCellWarning = false
         PlayFirstMissingCellWarning = false
       end
