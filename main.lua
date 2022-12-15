@@ -182,6 +182,7 @@ local VoltsPercentRem -- updated in init_func, bg_func
 local VoltsNow 				-- updated in bg_func
 local CellCount 			-- updated in init_func, bg_func
 local VoltsMax 				-- updated in bg_func
+local VoltageHistory = {}   -- updated in bg_func
 
 -- Voltage Checking flags
 local CheckBatNotFull = true
@@ -232,6 +233,12 @@ local function getCellVoltage( voltageSensorIn )
   if (type(cellResult) == "table") then
     for i, v in ipairs(cellResult) do
       cellSum = cellSum + v
+
+      -- update the historical voltage table
+      if (VoltageHistory[i] and VoltageHistory[i] > v) or VoltageHistory[i] == nil then
+        VoltageHistory[i] = v
+      end
+
     end
   else 
     cellSum = cellResult
@@ -302,7 +309,7 @@ local function HasSecondsElapsed(numSeconds)
   deltaTime = currTime - StartTime
   deltaSeconds = deltaTime/100 -- covert to seconds
   deltaTimeMod = deltaSeconds % numSeconds -- return the modulus
-  print(string.format("deltaTime: %d deltaSeconds: %d deltaTimeMod: %d", deltaTime, deltaSeconds, deltaTimeMod))
+  --print(string.format("deltaTime: %d deltaSeconds: %d deltaTimeMod: %d", deltaTime, deltaSeconds, deltaTimeMod))
   if math.abs( deltaTimeMod - 0 ) < 1 then
     return true
   else
@@ -313,18 +320,22 @@ end
 -- ####################################################################
 local function check_for_full_battery(voltageSensorValue)
   -- check condition 1: at reset that all voltages > CellFullVoltage volts
-  if (BatUsedmAh == 0) then -- BatUsedmAh is only 0 at reset
-    if CheckBatNotFull == true then  -- global variable to gate this so this check is only done once after reset
+  if BatUsedmAh == 0 then -- BatUsedmAh is only 0 at reset
+    print(string.format("CheckBatNotFull: %s type: %s", CheckBatNotFull, type(voltageSensorValue)))
+    if CheckBatNotFull then  -- global variable to gate this so this check is only done once after reset
+      CheckBatNotFull = false  -- since we have done the check, set to false so it is not ran again
       playBatNotFullWarning = false
       if (type(voltageSensorValue) == "table") then -- check to see if this is the dedicated voltage sensor
         for i, v in ipairs(voltageSensorValue) do
           if v < CellFullVoltage then
             print(string.format("i: %d v: %f", i,v))
             playBatNotFullWarning = true
+            break
           end
         end
-      else -- this is for the vfas sensor
-        print(string.format("vfas value: %d", voltageSensorValue))
+      elseif type(voltageSensorValue) == "number" then --this is for the vfas sensor
+        print(string.format("voltageSensorValue: %f", voltageSensorValue))
+        --(string.format("vfas value: %d", voltageSensorValue))
         if voltageSensorValue < (CellFullVoltage - .001) then
           print("vfas cell not full detected")
           playBatNotFullWarning = true
@@ -332,8 +343,8 @@ local function check_for_full_battery(voltageSensorValue)
       end
       if playBatNotFullWarning == true then
         playFile(soundDirPath.."BNFull.wav")
+        playBatNotFullWarning = false
       end
-      CheckBatNotFull = false  -- since we have done the check, set to false so it is not ran again
     end -- CheckBatNotfull
   end -- BatUsedmAh
 end
@@ -371,27 +382,28 @@ local function check_for_missing_cells(voltageSensorValue)
   if CellCount > 0 then
     missingCellDetected = false
     if (type(voltageSensorValue) == "table") then
-      tableSize = 0 -- Initialize the counter for the cell table size
-      for i, v in ipairs(voltageSensorValue) do
-        tableSize = tableSize + 1
-      end
-      if tableSize ~= CellCount then
-        print(string.format("CellCount: %d tableSize: %d", CellCount, tableSize))
+      --tableSize = 0 -- Initialize the counter for the cell table size
+      --for i, v in ipairs(voltageSensorValue) do
+      --  tableSize = tableSize + 1
+      --end
+      --if tableSize ~= CellCount then
+      if #voltageSensorValue ~= CellCount then
+        --print(string.format("CellCount: %d tableSize: %d", CellCount, tableSize))
         missingCellDetected = true
       end
     else
       if (CellCount * 3.2) > (voltageSensorValue) then
-        print(string.format("vfas missing cell: %d", voltageSensorValue))
+        --print(string.format("vfas missing cell: %d", voltageSensorValue))
         missingCellDetected = true
       end
     end
 
     if missingCellDetected then
-      print("tableSize =~= CellCount: missing cell detected")
+      --print("tableSize =~= CellCount: missing cell detected")
       timeElapsed = HasSecondsElapsed(10)
       if PlayFirstMissingCellWarning or (PlayMissingCellWarning and timeElapsed) then -- Play immediately and then every 10 seconds
         --playFile(soundDirPath.."mcw.wav")
-        print("play missing cell wav")
+        --print("play missing cell wav")
         PlayMissingCellWarning = false
         PlayFirstMissingCellWarning = false
       end
@@ -408,9 +420,9 @@ local function voltage_sensor_tests()
   -- 2. check to see that all cells are within VoltageDelta volts of each other
   -- 3. if number of cells are set in GV6, check to see that all are showing voltage
 
-  print("check_initial_battery_voltage")
+  --print("check_initial_battery_voltage")
   if VoltageSensor ~= "" then
-    print("getting VoltageSensor data")
+    --print("getting VoltageSensor data")
     cellResult = getValue( VoltageSensor )
 
     -- check condition 1: at reset that all voltages > 4.0 volts
@@ -446,8 +458,8 @@ end
 local function reset_if_needed()
   -- test if the reset switch is toggled, if so then reset all internal flags
   if SwReset ~= "" then -- Update switch position
-    --print(string.format("SwResetPos: %d", getValue(SwReset)))
     if -1024 ~= getValue(SwReset) then -- reset switch
+      print("reset switch toggled")
       CheckBatNotFull = true
       StartTime = nil
       PlayInconsistentCellWarning = true
@@ -455,6 +467,7 @@ local function reset_if_needed()
       PlayMissingCellWarning = true
       PlayFirstInconsistentCellWarning = true
       InconsistentCellVoltageDetected = false
+      VoltageHistory = {}
       --print("reset event")
     end
   end
@@ -487,6 +500,7 @@ local function bg_func()
   if VoltageSensor ~= "" then
     VoltsNow = getCellVoltage(VoltageSensor)
     VoltsMax = getCellVoltage(VoltageSensor.."+")
+
     --CellCount = math.ceil(VoltsMax / 4.25)
     if CellCount > 0 then
       VoltsPercentRem  = findPercentRem( VoltsNow/CellCount )
@@ -510,11 +524,11 @@ local function bg_func()
   if WriteGVBatRemPer == true then
     model.setGlobalVariable(GVBatRemPer, GVFlightMode, BatRemPer)
   end
-  print(string.format("\nBatRemainmAh: %d", BatRemainmAh))
-  print(string.format("BatRemPer: %d", BatRemPer))
-  print(string.format("CellCount: %d", CellCount))
-  print(string.format("VoltsMax: %d", VoltsMax))
-  print(string.format("BatUsedmAh: %d", BatUsedmAh))
+  --print(string.format("\nBatRemainmAh: %d", BatRemainmAh))
+  --print(string.format("BatRemPer: %d", BatRemPer))
+  --print(string.format("CellCount: %d", CellCount))
+  --print(string.format("VoltsMax: %d", VoltsMax))
+  --print(string.format("BatUsedmAh: %d", BatUsedmAh))
   voltage_sensor_tests()
 end
 
