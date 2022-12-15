@@ -311,31 +311,40 @@ local function HasSecondsElapsed(numSeconds)
 end
 
 -- ####################################################################
-local function check_for_full_battery()
+local function check_for_full_battery(voltageSensorValue)
   -- check condition 1: at reset that all voltages > CellFullVoltage volts
   if (BatUsedmAh == 0) then -- BatUsedmAh is only 0 at reset
-    if CheckBatNotFull == true then
+    if CheckBatNotFull == true then  -- global variable to gate this so this check is only done once after reset
       playBatNotFullWarning = false
-      for i, v in ipairs(cellResult) do
-        if v < CellFullVoltage then
-          print(string.format("i: %d v: %f", i,v))
+      if (type(voltageSensorValue) == "table") then -- check to see if this is the dedicated voltage sensor
+        for i, v in ipairs(voltageSensorValue) do
+          if v < CellFullVoltage then
+            print(string.format("i: %d v: %f", i,v))
+            playBatNotFullWarning = true
+          end
+        end
+      else -- this is for the vfas sensor
+        print(string.format("vfas value: %d", voltageSensorValue))
+        if voltageSensorValue < (CellFullVoltage - .001) then
+          print("vfas cell not full detected")
           playBatNotFullWarning = true
         end
       end
       if playBatNotFullWarning == true then
         playFile(soundDirPath.."BNFull.wav")
       end
-      CheckBatNotFull = false
+      CheckBatNotFull = false  -- since we have done the check, set to false so it is not ran again
     end -- CheckBatNotfull
   end -- BatUsedmAh
 end
 
 -- ####################################################################
-local function check_cell_delta_voltage()
+local function check_cell_delta_voltage(voltageSensorValue)
   -- Check to see if all cells are within VoltageDelta volts of each other
   --  default is .3 volts, can be changed above
-    for i, v1 in ipairs(cellResult) do
-      for j,v2 in ipairs(cellResult) do
+  if (type(voltageSensorValue) == "table") then -- check to see if this is the dedicated voltage sensor
+    for i, v1 in ipairs(voltageSensorValue) do
+      for j,v2 in ipairs(voltageSensorValue) do
         -- print(string.format("i: %d v: %f j: %d v: %f", i, v1, j,v2))
         if i~=j and (math.abs(v1 - v2) > VoltageDelta) then
           --print(string.format("i: %d v: %f j: %d v: %f", i, v1, j,v2))
@@ -352,18 +361,32 @@ local function check_cell_delta_voltage()
         end
       end
     end
+  end
 end
 
 -- ####################################################################
-local function check_for_missing_cells()
+local function check_for_missing_cells(voltageSensorValue)
   -- If the number of cells detected by the voltage sensor does not match the value in GV6 then play the warning message
+  -- This is only for the dedicated voltage sensor
   if CellCount > 0 then
-    tableSize = 0 -- Initialize the counter for the cell table size
-    for i, v in ipairs(cellResult) do
-      tableSize = tableSize + 1
+    missingCellDetected = false
+    if (type(voltageSensorValue) == "table") then
+      tableSize = 0 -- Initialize the counter for the cell table size
+      for i, v in ipairs(voltageSensorValue) do
+        tableSize = tableSize + 1
+      end
+      if tableSize ~= CellCount then
+        print(string.format("CellCount: %d tableSize: %d", CellCount, tableSize))
+        missingCellDetected = true
+      end
+    else
+      if (CellCount * 3.2) > (voltageSensorValue) then
+        print(string.format("vfas missing cell: %d", voltageSensorValue))
+        missingCellDetected = true
+      end
     end
-    print(string.format("CellCount: %d tableSize: %d", CellCount, tableSize))
-    if tableSize ~= CellCount then
+
+    if missingCellDetected then
       print("tableSize =~= CellCount: missing cell detected")
       timeElapsed = HasSecondsElapsed(10)
       if PlayFirstMissingCellWarning or (PlayMissingCellWarning and timeElapsed) then -- Play immediately and then every 10 seconds
@@ -380,7 +403,7 @@ local function check_for_missing_cells()
 end
 
 -- ####################################################################
-local function flvss_voltage_sensor_tests()
+local function voltage_sensor_tests()
   -- 1. at reset check to see that the cell voltage is > 4.1 for all cellSum
   -- 2. check to see that all cells are within VoltageDelta volts of each other
   -- 3. if number of cells are set in GV6, check to see that all are showing voltage
@@ -389,17 +412,15 @@ local function flvss_voltage_sensor_tests()
   if VoltageSensor ~= "" then
     print("getting VoltageSensor data")
     cellResult = getValue( VoltageSensor )
-    if (type(cellResult) == "table") then
 
-      -- check condition 1: at reset that all voltages > 4.0 volts
-      check_for_full_battery()
+    -- check condition 1: at reset that all voltages > 4.0 volts
+      check_for_full_battery(cellResult)
 
-      -- check condition 2: delta voltage
-      check_cell_delta_voltage()
+    -- check condition 2: delta voltage
+      check_cell_delta_voltage(cellResult)
 
-      -- check condition 3: all cells present
-      check_for_missing_cells()
-    end
+    -- check condition 3: all cells present
+      check_for_missing_cells(cellResult)
   end
 end
 
@@ -421,6 +442,7 @@ local function init_func()
   end
 end
 
+-- ####################################################################
 local function reset_if_needed()
   -- test if the reset switch is toggled, if so then reset all internal flags
   if SwReset ~= "" then -- Update switch position
@@ -493,7 +515,7 @@ local function bg_func()
   print(string.format("CellCount: %d", CellCount))
   print(string.format("VoltsMax: %d", VoltsMax))
   print(string.format("BatUsedmAh: %d", BatUsedmAh))
-  flvss_voltage_sensor_tests()
+  voltage_sensor_tests()
 end
 
 -- ####################################################################
