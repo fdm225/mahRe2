@@ -310,7 +310,7 @@ local function HasSecondsElapsed(numSeconds)
   deltaTime = currTime - StartTime
   deltaSeconds = deltaTime/100 -- covert to seconds
   deltaTimeMod = deltaSeconds % numSeconds -- return the modulus
-  print(string.format("deltaTime: %f deltaSeconds: %f deltaTimeMod: %f", deltaTime, deltaSeconds, deltaTimeMod))
+  --print(string.format("deltaTime: %f deltaSeconds: %f deltaTimeMod: %f", deltaTime, deltaSeconds, deltaTimeMod))
   if math.abs( deltaTimeMod - 0 ) < 1 then
     return true
   else
@@ -406,8 +406,8 @@ local function check_for_missing_cells(voltageSensorValue)
       --print("tableSize =~= CellCount: missing cell detected")
       timeElapsed = HasSecondsElapsed(10)
       if PlayFirstMissingCellWarning or (PlayMissingCellWarning and timeElapsed) then -- Play immediately and then every 10 seconds
-        --playFile(soundDirPath.."mcw.wav")
-        print("play missing cell wav")
+        playFile(soundDirPath.."mcw.wav")
+        --print("play missing cell wav")
         PlayMissingCellWarning = false
         PlayFirstMissingCellWarning = false
       end
@@ -476,7 +476,7 @@ local function reset_if_needed()
       --print("reset event")
     end
     if not HasSecondsElapsed(2) then
-      print("debounced")
+      --print("debounced")
       ResetDebounced = true
     end
   end
