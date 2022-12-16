@@ -192,6 +192,7 @@ local PlayInconsistentCellWarning = false
 local PlayFirstMissingCellWarning = true
 local PlayMissingCellWarning = true
 local InconsistentCellVoltageDetected = false
+local ResetDebounced = true
 
 -- Announcements
 local BatRemPerFileName = 0		-- updated in PlayPercentRemaining
@@ -309,7 +310,7 @@ local function HasSecondsElapsed(numSeconds)
   deltaTime = currTime - StartTime
   deltaSeconds = deltaTime/100 -- covert to seconds
   deltaTimeMod = deltaSeconds % numSeconds -- return the modulus
-  --print(string.format("deltaTime: %d deltaSeconds: %d deltaTimeMod: %d", deltaTime, deltaSeconds, deltaTimeMod))
+  print(string.format("deltaTime: %f deltaSeconds: %f deltaTimeMod: %f", deltaTime, deltaSeconds, deltaTimeMod))
   if math.abs( deltaTimeMod - 0 ) < 1 then
     return true
   else
@@ -321,7 +322,7 @@ end
 local function check_for_full_battery(voltageSensorValue)
   -- check condition 1: at reset that all voltages > CellFullVoltage volts
   if BatUsedmAh == 0 then -- BatUsedmAh is only 0 at reset
-    print(string.format("CheckBatNotFull: %s type: %s", CheckBatNotFull, type(voltageSensorValue)))
+    --print(string.format("CheckBatNotFull: %s type: %s", CheckBatNotFull, type(voltageSensorValue)))
     if CheckBatNotFull then  -- global variable to gate this so this check is only done once after reset
       playBatNotFullWarning = false
       if (type(voltageSensorValue) == "table") then -- check to see if this is the dedicated voltage sensor
@@ -381,7 +382,7 @@ end
 local function check_for_missing_cells(voltageSensorValue)
   -- If the number of cells detected by the voltage sensor does not match the value in GV6 then play the warning message
   -- This is only for the dedicated voltage sensor
-  print(string.format("CellCount: %d voltageSensorValue:", CellCount))
+  --print(string.format("CellCount: %d voltageSensorValue:", CellCount))
   if CellCount > 0 then
     missingCellDetected = false
     if (type(voltageSensorValue) == "table") then
@@ -461,7 +462,7 @@ end
 local function reset_if_needed()
   -- test if the reset switch is toggled, if so then reset all internal flags
   if SwReset ~= "" then -- Update switch position
-    if -1024 ~= getValue(SwReset) then -- reset switch
+    if ResetDebounced and HasSecondsElapsed(2) and -1024 ~= getValue(SwReset) then -- reset switch
       print("reset switch toggled")
       CheckBatNotFull = true
       StartTime = nil
@@ -471,7 +472,12 @@ local function reset_if_needed()
       PlayFirstInconsistentCellWarning = true
       InconsistentCellVoltageDetected = false
       VoltageHistory = {}
+      ResetDebounced = false
       --print("reset event")
+    end
+    if not HasSecondsElapsed(2) then
+      print("debounced")
+      ResetDebounced = true
     end
   end
 end
