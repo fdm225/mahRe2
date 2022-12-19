@@ -554,6 +554,49 @@ local function getPercentColor(cpercent)
 end
 
 -- ####################################################################
+local function formatCellVoltage(voltage)
+  if type(voltage) == "number" then
+    return(string.format("%.2f", voltage))
+  else
+    return("------")
+  end
+end
+
+-- ####################################################################
+local function drawBattery(xOrigin, yOrigin, wgt)
+    local myBatt = { ["x"] = xOrigin,
+                     ["y"] = yOrigin,
+                     ["w"] = 85,
+                     ["h"] = 35,
+                     ["segments_w"] = 15,
+                     ["color"] = WHITE,
+                     ["cath_w"] = 6,
+                     ["cath_h"] = 20 }
+
+  lcd.setColor(CUSTOM_COLOR, wgt.options.Color)
+
+  if BatRemPer > 0 then -- Don't blink
+    BlinkWhenZero = 0
+  else
+    BlinkWhenZero = BLINK
+  end
+
+  -- fill batt
+  lcd.setColor(CUSTOM_COLOR, getPercentColor(BatRemPer))
+  lcd.drawGauge(wgt.zone.x + myBatt.x, wgt.zone.y + myBatt.y, myBatt.w, myBatt.h, BatRemPer, 100, CUSTOM_COLOR)
+
+  -- draws bat
+  lcd.setColor(CUSTOM_COLOR, WHITE)
+  lcd.drawRectangle(wgt.zone.x + myBatt.x, wgt.zone.y + myBatt.y, myBatt.w, myBatt.h, CUSTOM_COLOR, 2)
+  lcd.drawFilledRectangle(wgt.zone.x + myBatt.x + myBatt.w, wgt.zone.y + myBatt.h / 2 - myBatt.cath_h / 2, myBatt.cath_w, myBatt.cath_h, CUSTOM_COLOR)
+  lcd.drawText(wgt.zone.x + myBatt.x + 20, wgt.zone.y + myBatt.y + 5, string.format("%d%%", BatRemPer), LEFT + MIDSIZE + CUSTOM_COLOR)
+
+    -- draw values
+  lcd.drawText(wgt.zone.x + myBatt.x, wgt.zone.y + myBatt.y + 35,
+          string.format("%d mAh", BatRemainmAh), DBLSIZE + CUSTOM_COLOR + BlinkWhenZero)
+end
+
+-- ####################################################################
 local function refreshZoneTiny(wgt)
   -- This size is for top bar wgts
   --- Zone size: 70x39 1/8th top bar
@@ -589,28 +632,31 @@ end
 -- ####################################################################
 local function refreshZoneMedium(wgt)
   --- Size is 225x98 1/4th  (no sliders/trim)
-  local myBatt = { ["x"] = 0, ["y"] = 0, ["w"] = 85, ["h"] = 35, ["segments_w"] = 15, ["color"] = WHITE, ["cath_w"] = 6, ["cath_h"] = 20 }
-  
-  lcd.setColor(CUSTOM_COLOR, wgt.options.Color)
+  drawBattery(0,0, wgt)
 
-  if BatRemPer > 0 then -- Don't blink
-    BlinkWhenZero = 0
-  else
-    BlinkWhenZero = BLINK
-  end
-
-  -- draw values
-  lcd.drawText(wgt.zone.x, wgt.zone.y + 35, string.format("%d mAh", BatRemainmAh), DBLSIZE + CUSTOM_COLOR + BlinkWhenZero)
-  
-  -- fill batt
-  lcd.setColor(CUSTOM_COLOR, getPercentColor(BatRemPer))
-  lcd.drawGauge(wgt.zone.x + myBatt.x, wgt.zone.y + myBatt.y, myBatt.w, myBatt.h, BatRemPer, 100, CUSTOM_COLOR)
-
-  -- draws bat
-  lcd.setColor(CUSTOM_COLOR, WHITE)
-  lcd.drawRectangle(wgt.zone.x + myBatt.x, wgt.zone.y + myBatt.y, myBatt.w, myBatt.h, CUSTOM_COLOR, 2)
-  lcd.drawFilledRectangle(wgt.zone.x + myBatt.x + myBatt.w, wgt.zone.y + myBatt.h / 2 - myBatt.cath_h / 2, myBatt.cath_w, myBatt.cath_h, CUSTOM_COLOR)
-  lcd.drawText(wgt.zone.x + myBatt.x + 20, wgt.zone.y + myBatt.y + 5, string.format("%d%%", BatRemPer), LEFT + MIDSIZE + CUSTOM_COLOR)
+  --local myBatt = { ["x"] = 0, ["y"] = 0, ["w"] = 85, ["h"] = 35, ["segments_w"] = 15, ["color"] = WHITE, ["cath_w"] = 6, ["cath_h"] = 20 }
+  --
+  --lcd.setColor(CUSTOM_COLOR, wgt.options.Color)
+  --
+  --if BatRemPer > 0 then -- Don't blink
+  --  BlinkWhenZero = 0
+  --else
+  --  BlinkWhenZero = BLINK
+  --end
+  --
+  ---- fill batt
+  --lcd.setColor(CUSTOM_COLOR, getPercentColor(BatRemPer))
+  --lcd.drawGauge(wgt.zone.x + myBatt.x, wgt.zone.y + myBatt.y, myBatt.w, myBatt.h, BatRemPer, 100, CUSTOM_COLOR)
+  --
+  ---- draws bat
+  --lcd.setColor(CUSTOM_COLOR, WHITE)
+  --lcd.drawRectangle(wgt.zone.x + myBatt.x, wgt.zone.y + myBatt.y, myBatt.w, myBatt.h, CUSTOM_COLOR, 2)
+  --lcd.drawFilledRectangle(wgt.zone.x + myBatt.x + myBatt.w, wgt.zone.y + myBatt.h / 2 - myBatt.cath_h / 2, myBatt.cath_w, myBatt.cath_h, CUSTOM_COLOR)
+  --lcd.drawText(wgt.zone.x + myBatt.x + 20, wgt.zone.y + myBatt.y + 5, string.format("%d%%", BatRemPer), LEFT + MIDSIZE + CUSTOM_COLOR)
+  --
+  --  -- draw values
+  --lcd.drawText(wgt.zone.x + myBatt.x, wgt.zone.y + myBatt.y + 35,
+  --        string.format("%d mAh", BatRemainmAh), DBLSIZE + CUSTOM_COLOR + BlinkWhenZero)
 
 end
 
@@ -638,6 +684,7 @@ local function refreshZoneLarge(wgt)
 end
 
 -- ####################################################################
+
 local function refreshZoneXLarge(wgt)
   --- Size is 390x172 1/1
   --- Size is 460x252 1/1 (no sliders/trim/topbar)
@@ -645,7 +692,7 @@ local function refreshZoneXLarge(wgt)
   local CUSTOM_COLOR = WHITE
   fontSize = 10
 
-    if BatRemPer > 0 then -- Don't blink
+  if BatRemPer > 0 then -- Don't blink
     BlinkWhenZero = 0
   else
     BlinkWhenZero = BLINK
@@ -656,10 +703,19 @@ local function refreshZoneXLarge(wgt)
   --  for i, v in ipairs(cellResult) do
   --    lcd.drawText(wgt.zone.x + 5, wgt.zone.y + fontSize, "BATTERY LEFT", SHADOWED)
   if (type(cellResult) == "table") then
-    lcd.drawText(wgt.zone.x + 5, wgt.zone.y + fontSize, string.format("Cell 1: %.2f/%.2f   Cell 2: %2.f/%.2f",
-          cellResult[1],  VoltageHistory[1], cellResult[2],  VoltageHistory[2]))
+
+    for i=1, 7, 2 do
+      c1 = formatCellVoltage(cellResult[i])
+      h1 = formatCellVoltage(VoltageHistory[i])
+      c2 = formatCellVoltage(cellResult[i+1])
+      h2 = formatCellVoltage(VoltageHistory[i+1])
+
+      -- C1: C.cc/H.hh  C2: C.cc/H.hh
+      lcd.drawText(wgt.zone.x + 5, wgt.zone.y  + 10*(i-1),
+              string.format("C%d: %s/%s   C%d: %s/%s", i, c1,  h1, i+1, c2,  h2))
+    end
+    drawBattery(0, 100, wgt)
   end
-  -- C1: C.cc/H.hh  C2: C.cc/H.hh
 
 
   --lcd.drawText(wgt.zone.x + 5, wgt.zone.y + fontSize, "BATTERY LEFT", SHADOWED)
