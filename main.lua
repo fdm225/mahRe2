@@ -644,22 +644,33 @@ local function refreshZoneXLarge(wgt)
   lcd.setColor(CUSTOM_COLOR, wgt.options.Color)
   local CUSTOM_COLOR = WHITE
   fontSize = 10
-  
+
     if BatRemPer > 0 then -- Don't blink
     BlinkWhenZero = 0
   else
     BlinkWhenZero = BLINK
   end
-  
-  lcd.drawText(wgt.zone.x + 5, wgt.zone.y + fontSize, "BATTERY LEFT", SHADOWED)
-  lcd.setColor(CUSTOM_COLOR, getPercentColor(BatRemPer))
-  lcd.drawText(wgt.zone.x + 5, wgt.zone.y + fontSize + 25, round(BatRemPer).."%" , DBLSIZE + SHADOWED + BlinkWhenZero)
-  lcd.drawText(wgt.zone.x + 5, wgt.zone.y + fontSize + 55, math.floor(BatRemainmAh).."mAh" , DBLSIZE + SHADOWED + BlinkWhenZero)
 
-  lcd.setColor(CUSTOM_COLOR, wgt.options.Color)
-  lcd.drawRectangle((wgt.zone.x - 1) , (wgt.zone.y + (wgt.zone.h - 31)), (wgt.zone.w + 2), 32, 0)
-  lcd.setColor(CUSTOM_COLOR, getPercentColor(BatRemPer))
-  lcd.drawGauge(wgt.zone.x , (wgt.zone.y + (wgt.zone.h - 30)), wgt.zone.w, 30, BatRemPer, 100, BlinkWhenZero)
+  cellResult = getValue( VoltageSensor )
+  --if (type(cellResult) == "table") then
+  --  for i, v in ipairs(cellResult) do
+  --    lcd.drawText(wgt.zone.x + 5, wgt.zone.y + fontSize, "BATTERY LEFT", SHADOWED)
+  if (type(cellResult) == "table") then
+    lcd.drawText(wgt.zone.x + 5, wgt.zone.y + fontSize, string.format("Cell 1: %.2f/%.2f   Cell 2: %2.f/%.2f",
+          cellResult[1],  VoltageHistory[1], cellResult[2],  VoltageHistory[2]))
+  end
+  -- C1: C.cc/H.hh  C2: C.cc/H.hh
+
+
+  --lcd.drawText(wgt.zone.x + 5, wgt.zone.y + fontSize, "BATTERY LEFT", SHADOWED)
+  --lcd.setColor(CUSTOM_COLOR, getPercentColor(BatRemPer))
+  --lcd.drawText(wgt.zone.x + 5, wgt.zone.y + fontSize + 25, round(BatRemPer).."%" , DBLSIZE + SHADOWED + BlinkWhenZero)
+  --lcd.drawText(wgt.zone.x + 5, wgt.zone.y + fontSize + 55, math.floor(BatRemainmAh).."mAh" , DBLSIZE + SHADOWED + BlinkWhenZero)
+  --
+  --lcd.setColor(CUSTOM_COLOR, wgt.options.Color)
+  --lcd.drawRectangle((wgt.zone.x - 1) , (wgt.zone.y + (wgt.zone.h - 31)), (wgt.zone.w + 2), 32, 0)
+  --lcd.setColor(CUSTOM_COLOR, getPercentColor(BatRemPer))
+  --lcd.drawGauge(wgt.zone.x , (wgt.zone.y + (wgt.zone.h - 30)), wgt.zone.w, 30, BatRemPer, 100, BlinkWhenZero)
 end
 
 -- ####################################################################
