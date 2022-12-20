@@ -183,6 +183,7 @@ local VoltsNow 				-- updated in bg_func
 local CellCount 			-- updated in init_func, bg_func
 local VoltsMax 				-- updated in bg_func
 local VoltageHistory = {}   -- updated in bg_func
+local VoltageTableRendered = false
 
 -- Voltage Checking flags
 local CheckBatNotFull = true
@@ -473,6 +474,7 @@ local function reset_if_needed()
       InconsistentCellVoltageDetected = false
       VoltageHistory = {}
       ResetDebounced = false
+      VoltageTableRendered = false
       --print("reset event")
     end
     if not HasSecondsElapsed(2) then
@@ -556,9 +558,11 @@ end
 -- ####################################################################
 local function formatCellVoltage(voltage)
   if type(voltage) == "number" then
-    return(string.format("%.2f", voltage))
+    vColor, blinking = Color, 0
+    if voltage < 3.7 then vColor, blinking = RED, BLINK end
+    return string.format("%.2f", voltage), vColor, blinking
   else
-    return("------")
+    return "------", Color, 0
   end
 end
 
@@ -593,7 +597,7 @@ local function drawBattery(xOrigin, yOrigin, wgt)
 
     -- draw values
   lcd.drawText(wgt.zone.x + myBatt.x, wgt.zone.y + myBatt.y + 35,
-          string.format("%d mAh", BatRemainmAh), DBLSIZE + CUSTOM_COLOR + BlinkWhenZero)
+          string.format("%d mAh", BatRemainmAh), DBLSIZE + Color + BlinkWhenZero)
 end
 
 -- ####################################################################
@@ -672,7 +676,7 @@ local function refreshZoneLarge(wgt)
   else
     BlinkWhenZero = BLINK
   end
- lcd.drawText(wgt.zone.x + 5, wgt.zone.y + fontSize, "BATTERY LEFT", SHADOWED)
+  lcd.drawText(wgt.zone.x + 5, wgt.zone.y + fontSize, "BATTERY LEFT", SHADOWED)
   lcd.setColor(CUSTOM_COLOR, getPercentColor(BatRemPer))
   lcd.drawText(wgt.zone.x + 5, wgt.zone.y + fontSize + 25, round(BatRemPer).."%" , DBLSIZE + SHADOWED + BlinkWhenZero)
   lcd.drawText(wgt.zone.x + 5, wgt.zone.y + fontSize + 55, math.floor(BatRemainmAh).."mAh" , DBLSIZE + SHADOWED + BlinkWhenZero)
@@ -702,21 +706,36 @@ local function refreshZoneXLarge(wgt)
   --if (type(cellResult) == "table") then
   --  for i, v in ipairs(cellResult) do
   --    lcd.drawText(wgt.zone.x + 5, wgt.zone.y + fontSize, "BATTERY LEFT", SHADOWED)
-  if (type(cellResult) == "table") then
-
+  if not VoltageTableRendered then
     for i=1, 7, 2 do
-      c1 = formatCellVoltage(cellResult[i])
-      h1 = formatCellVoltage(VoltageHistory[i])
-      c2 = formatCellVoltage(cellResult[i+1])
-      h2 = formatCellVoltage(VoltageHistory[i+1])
+      lcd.drawText(wgt.zone.x, wgt.zone.y  + 10*(i-1),
+              string.format("C%d: ------/------    C%d: ------/------", i, i+1), WHITE)
+    end
+  end
+  if (type(cellResult) == "table") then
+    VoltageTableRendered = true
+    for i=1, 7, 2 do
+      cell1, cell1Color, cell1Blink = formatCellVoltage(cellResult[i])
+      history1, history1Color, history1Blink = formatCellVoltage(VoltageHistory[i])
+      cell2, cell2Color, cell2Blink = formatCellVoltage(cellResult[i+1])
+      history2, history2Color, history2Blink = formatCellVoltage(VoltageHistory[i+1])
 
       -- C1: C.cc/H.hh  C2: C.cc/H.hh
-      lcd.drawText(wgt.zone.x + 5, wgt.zone.y  + 10*(i-1),
-              string.format("C%d: %s/%s   C%d: %s/%s", i, c1,  h1, i+1, c2,  h2))
-    end
-    drawBattery(0, 100, wgt)
-  end
+      lcd.drawText(wgt.zone.x, wgt.zone.y  + 10*(i-1), string.format("C%d:", i), Color)
+      lcd.drawText(wgt.zone.x + 25, wgt.zone.y  + 10*(i-1), string.format("%s", cell1), cell1Color+cell1Blink)
+      lcd.drawText(wgt.zone.x + 55, wgt.zone.y  + 10*(i-1), string.format("/"), Color)
+      lcd.drawText(wgt.zone.x + 60, wgt.zone.y  + 10*(i-1), string.format("%s", history1), history1Color+history1Blink)
 
+      lcd.drawText(wgt.zone.x + 100, wgt.zone.y  + 10*(i-1), string.format("C%d:", i+1), Color)
+      lcd.drawText(wgt.zone.x + 125, wgt.zone.y  + 10*(i-1), string.format("%s", cell2), cell2Color+cell2Blink)
+      lcd.drawText(wgt.zone.x + 155, wgt.zone.y  + 10*(i-1), string.format("/"), Color)
+      lcd.drawText(wgt.zone.x + 160, wgt.zone.y  + 10*(i-1), string.format("%s", history2), history2Color+history2Blink)
+
+      --lcd.drawText(wgt.zone.x + 100, wgt.zone.y  + 10*(i-1),
+      --        string.format("C%d: %s/%s", i+1, cell2, history2))
+    end
+  end
+  drawBattery(0, 100, wgt)
 
   --lcd.drawText(wgt.zone.x + 5, wgt.zone.y + fontSize, "BATTERY LEFT", SHADOWED)
   --lcd.setColor(CUSTOM_COLOR, getPercentColor(BatRemPer))
