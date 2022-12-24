@@ -588,6 +588,7 @@ local function formatCellVoltage(voltage)
   end
 end
 
+-- ####################################################################
 local function drawCellVoltage(wgt, cellResult)
   -- Draw the voltage table for the current/low cell voltages
   -- this should use ~1/4 screen
@@ -772,15 +773,15 @@ local function refreshZoneXLarge(wgt)
   lcd.drawText(wgt.zone.x + 210, wgt.zone.y + -5, "Current/Max", DBLSIZE + Color + SHADOWED)
   amps = getValue( CurrentSensor )
   --lcd.drawText(wgt.zone.x + 270, wgt.zone.y + 25, string.format("%.1fA", amps), DBLSIZE + Color)
-  lcd.drawText(wgt.zone.x + 210, wgt.zone.y + 25, string.format("%.1fA/%.1fA", amps, MaxAmps), MIDSIZE + Color)
+  lcd.drawText(wgt.zone.x + 210, wgt.zone.y + 30, string.format("%.0fA/%.0fA", amps, MaxAmps), MIDSIZE + Color)
   watts = math.floor(amps * VoltsNow)
 
   if type(MaxWatts) == "string" then
     sMaxWatts = MaxWatts
   elseif type(MaxWatts) == "number" then
-    sMaxWatts = string.format("%.1f", MaxWatts)
+    sMaxWatts = string.format("%.0f", MaxWatts)
   end
-  lcd.drawText(wgt.zone.x + 210, wgt.zone.y + 55, string.format("%.1fW/%sW", watts, sMaxWatts), MIDSIZE + Color)
+  lcd.drawText(wgt.zone.x + 210, wgt.zone.y + 55, string.format("%.0fW/%sW", watts, sMaxWatts), MIDSIZE + Color)
 
   -- Draw the bottom-right of the screen
   --lcd.drawText(wgt.zone.x + 190, wgt.zone.y + 85, string.format("%sW", MaxWatts), XXLSIZE + Color)
