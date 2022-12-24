@@ -103,6 +103,7 @@ local Title = "Flight Battery Monitor"
 -- Change as desired
 local VoltageSensor = "Cels" -- optional set to "" to ignore
 local mAhSensor = "mAh" -- optional set to "" to ignore
+local CurrentSensor = "Curr"
 
 -- Reserve Capacity
 -- 	Remaining % Displayed = Calculated Remaining % - Reserve %
@@ -194,6 +195,8 @@ local PlayFirstMissingCellWarning = true
 local PlayMissingCellWarning = true
 local InconsistentCellVoltageDetected = false
 local ResetDebounced = true
+local MaxWatts = "-----"
+local MaxAmps = "-----"
 
 -- Announcements
 local BatRemPerFileName = 0		-- updated in PlayPercentRemaining
@@ -247,6 +250,22 @@ local function getCellVoltage( voltageSensorIn )
   end
 
   return cellSum
+end
+
+-- ####################################################################
+local function getMaxWatts( voltsNow )
+  if CurrentSensor ~= "" then
+    amps = getValue( CurrentSensor )
+    if type(amps) == "number" then
+      if type(MaxAmps) == "string" or (type(MaxAmps) == "number" and amps > MaxAmps) then
+        MaxAmps = amps
+      end
+      watts = amps * voltsNow
+      if type(MaxWatts) == "string" or watts > MaxWatts then
+        MaxWatts = watts
+      end
+    end
+  end
 end
 
 -- ####################################################################
@@ -475,6 +494,8 @@ local function reset_if_needed()
       VoltageHistory = {}
       ResetDebounced = false
       VoltageTableRendered = false
+      MaxWatts = "-----"
+      MaxAmps = "-----"
       --print("reset event")
     end
     if not HasSecondsElapsed(2) then
@@ -511,6 +532,7 @@ local function bg_func()
   if VoltageSensor ~= "" then
     VoltsNow = getCellVoltage(VoltageSensor)
     VoltsMax = getCellVoltage(VoltageSensor.."+")
+    getMaxWatts(VoltsNow)
 
     --CellCount = math.ceil(VoltsMax / 4.25)
     if CellCount > 0 then
@@ -564,6 +586,31 @@ local function formatCellVoltage(voltage)
   else
     return "------", Color, 0
   end
+end
+
+local function drawCellVoltage(wgt, cellResult)
+  -- Draw the voltage table for the current/low cell voltages
+  -- this should use ~1/4 screen
+  for i=1, 7, 2 do
+      cell1, cell1Color, cell1Blink = formatCellVoltage(cellResult[i])
+      history1, history1Color, history1Blink = formatCellVoltage(VoltageHistory[i])
+      cell2, cell2Color, cell2Blink = formatCellVoltage(cellResult[i+1])
+      history2, history2Color, history2Blink = formatCellVoltage(VoltageHistory[i+1])
+
+      -- C1: C.cc/H.hh  C2: C.cc/H.hh
+      lcd.drawText(wgt.zone.x, wgt.zone.y  + 10*(i-1), string.format("C%d:", i), Color)
+      lcd.drawText(wgt.zone.x + 25, wgt.zone.y  + 10*(i-1), string.format("%s", cell1), cell1Color+cell1Blink)
+      lcd.drawText(wgt.zone.x + 55, wgt.zone.y  + 10*(i-1), string.format("/"), Color)
+      lcd.drawText(wgt.zone.x + 60, wgt.zone.y  + 10*(i-1), string.format("%s", history1), history1Color+history1Blink)
+
+      lcd.drawText(wgt.zone.x + 100, wgt.zone.y  + 10*(i-1), string.format("C%d:", i+1), Color)
+      lcd.drawText(wgt.zone.x + 125, wgt.zone.y  + 10*(i-1), string.format("%s", cell2), cell2Color+cell2Blink)
+      lcd.drawText(wgt.zone.x + 155, wgt.zone.y  + 10*(i-1), string.format("/"), Color)
+      lcd.drawText(wgt.zone.x + 160, wgt.zone.y  + 10*(i-1), string.format("%s", history2), history2Color+history2Blink)
+
+      --lcd.drawText(wgt.zone.x + 100, wgt.zone.y  + 10*(i-1),
+      --        string.format("C%d: %s/%s", i+1, cell2, history2))
+    end
 end
 
 -- ####################################################################
@@ -714,28 +761,30 @@ local function refreshZoneXLarge(wgt)
   end
   if (type(cellResult) == "table") then
     VoltageTableRendered = true
-    for i=1, 7, 2 do
-      cell1, cell1Color, cell1Blink = formatCellVoltage(cellResult[i])
-      history1, history1Color, history1Blink = formatCellVoltage(VoltageHistory[i])
-      cell2, cell2Color, cell2Blink = formatCellVoltage(cellResult[i+1])
-      history2, history2Color, history2Blink = formatCellVoltage(VoltageHistory[i+1])
-
-      -- C1: C.cc/H.hh  C2: C.cc/H.hh
-      lcd.drawText(wgt.zone.x, wgt.zone.y  + 10*(i-1), string.format("C%d:", i), Color)
-      lcd.drawText(wgt.zone.x + 25, wgt.zone.y  + 10*(i-1), string.format("%s", cell1), cell1Color+cell1Blink)
-      lcd.drawText(wgt.zone.x + 55, wgt.zone.y  + 10*(i-1), string.format("/"), Color)
-      lcd.drawText(wgt.zone.x + 60, wgt.zone.y  + 10*(i-1), string.format("%s", history1), history1Color+history1Blink)
-
-      lcd.drawText(wgt.zone.x + 100, wgt.zone.y  + 10*(i-1), string.format("C%d:", i+1), Color)
-      lcd.drawText(wgt.zone.x + 125, wgt.zone.y  + 10*(i-1), string.format("%s", cell2), cell2Color+cell2Blink)
-      lcd.drawText(wgt.zone.x + 155, wgt.zone.y  + 10*(i-1), string.format("/"), Color)
-      lcd.drawText(wgt.zone.x + 160, wgt.zone.y  + 10*(i-1), string.format("%s", history2), history2Color+history2Blink)
-
-      --lcd.drawText(wgt.zone.x + 100, wgt.zone.y  + 10*(i-1),
-      --        string.format("C%d: %s/%s", i+1, cell2, history2))
-    end
+    -- Draw the top-left 1/4 of the screen
+    drawCellVoltage(wgt, cellResult)
   end
+  -- Draw the bottom-left 1/4 of the screen
   drawBattery(0, 100, wgt)
+
+  -- Draw the top-right 1/4 of the screen
+  --lcd.drawText(wgt.zone.x + 270, wgt.zone.y + -5, string.format("%.2fV", VoltsNow), DBLSIZE + Color)
+  lcd.drawText(wgt.zone.x + 210, wgt.zone.y + -5, "Current/Max", DBLSIZE + Color + SHADOWED)
+  amps = getValue( CurrentSensor )
+  --lcd.drawText(wgt.zone.x + 270, wgt.zone.y + 25, string.format("%.1fA", amps), DBLSIZE + Color)
+  lcd.drawText(wgt.zone.x + 210, wgt.zone.y + 25, string.format("%.1fA/%.1fA", amps, MaxAmps), MIDSIZE + Color)
+  watts = math.floor(amps * VoltsNow)
+
+  if type(MaxWatts) == "string" then
+    sMaxWatts = MaxWatts
+  elseif type(MaxWatts) == "number" then
+    sMaxWatts = string.format("%.1f", MaxWatts)
+  end
+  lcd.drawText(wgt.zone.x + 210, wgt.zone.y + 55, string.format("%.1fW/%sW", watts, sMaxWatts), MIDSIZE + Color)
+
+  -- Draw the bottom-right of the screen
+  --lcd.drawText(wgt.zone.x + 190, wgt.zone.y + 85, string.format("%sW", MaxWatts), XXLSIZE + Color)
+  lcd.drawText(wgt.zone.x + 185, wgt.zone.y + 85, string.format("%.2fV", VoltsNow), XXLSIZE + Color)
 
   --lcd.drawText(wgt.zone.x + 5, wgt.zone.y + fontSize, "BATTERY LEFT", SHADOWED)
   --lcd.setColor(CUSTOM_COLOR, getPercentColor(BatRemPer))
@@ -768,8 +817,9 @@ end
 
 -- ####################################################################
 function update(Context, options)
-  mAhSensor = options.Current
-  --VoltageSensor = options.Voltage
+  mAhSensor = options.mAh
+  VoltageSensor = options.Voltage
+  CurrentSensor = options.Current
   Color = options.Color
   Context.options = options
   Context.back = nil
@@ -787,8 +837,9 @@ function refresh(Context)
 end
 
 local options = {
-  { "Current", SOURCE, mAh }, -- Defines source Battery Current Sensor
+  { "mAh", SOURCE, mAh }, -- Defines source Battery Current Sensor
   { "Voltage", SOURCE, CEL1 }, -- Defines source Battery Voltage Sensor
+  {"Current", SOURCe, cURR},
   { "Color", COLOR, GREY },
   { "FunStuff", BOOL, 0  }
 }
