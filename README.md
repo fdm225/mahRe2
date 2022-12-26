@@ -89,3 +89,10 @@
 | AnnouncePercentRemaining | Play the percent remaining every 10 percent |
 | SillyStuff | Play some silly/fun sounds |
 
+![Full screen widget](https://photos.app.goo.gl/Y2PddbLU1fYaGxpV6)
+
+![Quarter screen widget](https://photos.app.goo.gl/tvFX7WMkLHWauirq8)
+
+![Settings](https://photos.app.goo.gl/pdtq6hd91Agswakb7)
+
+![mAh Sensor setup](https://photos.app.goo.gl/MDBQvk1Yr8Hje4e48)

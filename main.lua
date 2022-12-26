@@ -840,7 +840,7 @@ end
 local options = {
   { "mAh", SOURCE, mAh }, -- Defines source Battery Current Sensor
   { "Voltage", SOURCE, CEL1 }, -- Defines source Battery Voltage Sensor
-  {"Current", SOURCe, cURR},
+  {"Current", SOURCE, Curr},
   { "Color", COLOR, GREY },
   { "FunStuff", BOOL, 0  }
 }
