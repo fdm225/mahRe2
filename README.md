@@ -74,6 +74,15 @@
 ## Configurations
 
  - For help using telemetry scripts  --  [http://rcdiy.ca/telemetry-scripts-getting-started/](http://rcdiy.ca/telemetry-scripts-getting-started/)
+
+If using a current sensor to calculate mAh used then an additional sensor will need to be created to add the values collected from the Curr sensor.  Create a sensor with the following settings:
+| Field | Value |
+|--|--|
+| Name | mAh |
+| Type | Calculated |
+| Formula | Consumption |
+| Sensor | Curr |
+
  - The following additional configurations are available within the script
 
 | Variable | Use |
@@ -89,10 +98,10 @@
 | AnnouncePercentRemaining | Play the percent remaining every 10 percent |
 | SillyStuff | Play some silly/fun sounds |
 
-![Full screen widget](https://photos.app.goo.gl/Y2PddbLU1fYaGxpV6)
+![Full screen widget](https://static.rcgroups.net/forums/attachments/6/4/3/0/2/9/a16811177-105-mAhRe2_full_screen.png)
 
-![Quarter screen widget](https://photos.app.goo.gl/tvFX7WMkLHWauirq8)
+![Quarter screen widget](https://static.rcgroups.net/forums/attachments/6/4/3/0/2/9/a16811165-83-mAhRe2_quarter.png)
 
-![Settings](https://photos.app.goo.gl/pdtq6hd91Agswakb7)
+![Settings](https://static.rcgroups.net/forums/attachments/6/4/3/0/2/9/a16811163-82-mAhRe2_settings.png)
 
-![mAh Sensor setup](https://photos.app.goo.gl/MDBQvk1Yr8Hje4e48)
+![mAh Sensor setup](https://static.rcgroups.net/forums/attachments/6/4/3/0/2/9/a16811169-236-mAhRe2_mAh_sensor.png)
