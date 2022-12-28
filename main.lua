@@ -757,7 +757,7 @@ local function refreshZoneXLarge(wgt)
   if not VoltageTableRendered then
     for i=1, 7, 2 do
       lcd.drawText(wgt.zone.x, wgt.zone.y  + 10*(i-1),
-              string.format("C%d: ------/------    C%d: ------/------", i, i+1), WHITE)
+              string.format("C%d: ------/------    C%d: ------/------", i, i+1), Color)
     end
   end
   if (type(cellResult) == "table") then
@@ -840,7 +840,7 @@ end
 local options = {
   { "mAh", SOURCE, mAh }, -- Defines source Battery Current Sensor
   { "Voltage", SOURCE, CEL1 }, -- Defines source Battery Voltage Sensor
-  {"Current", SOURCE, Curr},
+  { "Current", SOURCE, Curr },
   { "Color", COLOR, GREY },
   { "FunStuff", BOOL, 0  }
 }
