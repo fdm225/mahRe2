@@ -180,11 +180,10 @@ local BatUsedmAh 			-- updated in bg_func
 local BatRemainmAh 		-- updated in init_func, bg_func
 local BatRemPer 			-- updated in init_func, bg_func
 local VoltsPercentRem -- updated in init_func, bg_func
-local VoltsNow 				-- updated in bg_func
+local VoltsNow 	= 0			-- updated in bg_func
 local CellCount 			-- updated in init_func, bg_func
 local VoltsMax 				-- updated in bg_func
 local VoltageHistory = {}   -- updated in bg_func
-local VoltageTableRendered = false
 
 -- Voltage Checking flags
 local CheckBatNotFull = true
@@ -493,7 +492,7 @@ local function reset_if_needed()
       InconsistentCellVoltageDetected = false
       VoltageHistory = {}
       ResetDebounced = false
-      VoltageTableRendered = false
+      VoltsNow = 0
       MaxWatts = "-----"
       MaxAmps = "-----"
       --print("reset event")
@@ -530,7 +529,11 @@ local function bg_func()
   end -- mAhSensor ~= ""
 
   if VoltageSensor ~= "" then
-    VoltsNow = getCellVoltage(VoltageSensor)
+    volts = getCellVoltage(VoltageSensor)
+    if VoltsNow < 1 or volts > 1 then
+      VoltsNow = volts
+    end
+    --VoltsNow = getCellVoltage(VoltageSensor)
     VoltsMax = getCellVoltage(VoltageSensor.."+")
     getMaxWatts(VoltsNow)
 
@@ -592,26 +595,28 @@ end
 local function drawCellVoltage(wgt, cellResult)
   -- Draw the voltage table for the current/low cell voltages
   -- this should use ~1/4 screen
+  cellResult = getValue( VoltageSensor )
+  if (type(cellResult) ~= "table") then
+   cellResult = {}
+  end
+
   for i=1, 7, 2 do
-      cell1, cell1Color, cell1Blink = formatCellVoltage(cellResult[i])
-      history1, history1Color, history1Blink = formatCellVoltage(VoltageHistory[i])
-      cell2, cell2Color, cell2Blink = formatCellVoltage(cellResult[i+1])
-      history2, history2Color, history2Blink = formatCellVoltage(VoltageHistory[i+1])
+    cell1, cell1Color, cell1Blink = formatCellVoltage(cellResult[i])
+    history1, history1Color, history1Blink = formatCellVoltage(VoltageHistory[i])
+    cell2, cell2Color, cell2Blink = formatCellVoltage(cellResult[i+1])
+    history2, history2Color, history2Blink = formatCellVoltage(VoltageHistory[i+1])
 
-      -- C1: C.cc/H.hh  C2: C.cc/H.hh
-      lcd.drawText(wgt.zone.x, wgt.zone.y  + 10*(i-1), string.format("C%d:", i), Color)
-      lcd.drawText(wgt.zone.x + 25, wgt.zone.y  + 10*(i-1), string.format("%s", cell1), cell1Color+cell1Blink)
-      lcd.drawText(wgt.zone.x + 55, wgt.zone.y  + 10*(i-1), string.format("/"), Color)
-      lcd.drawText(wgt.zone.x + 60, wgt.zone.y  + 10*(i-1), string.format("%s", history1), history1Color+history1Blink)
+    -- C1: C.cc/H.hh  C2: C.cc/H.hh
+    lcd.drawText(wgt.zone.x, wgt.zone.y  + 10*(i-1), string.format("C%d:", i), Color)
+    lcd.drawText(wgt.zone.x + 25, wgt.zone.y  + 10*(i-1), string.format("%s", cell1), cell1Color+cell1Blink)
+    lcd.drawText(wgt.zone.x + 55, wgt.zone.y  + 10*(i-1), string.format("/"), Color)
+    lcd.drawText(wgt.zone.x + 60, wgt.zone.y  + 10*(i-1), string.format("%s", history1), history1Color+history1Blink)
 
-      lcd.drawText(wgt.zone.x + 100, wgt.zone.y  + 10*(i-1), string.format("C%d:", i+1), Color)
-      lcd.drawText(wgt.zone.x + 125, wgt.zone.y  + 10*(i-1), string.format("%s", cell2), cell2Color+cell2Blink)
-      lcd.drawText(wgt.zone.x + 155, wgt.zone.y  + 10*(i-1), string.format("/"), Color)
-      lcd.drawText(wgt.zone.x + 160, wgt.zone.y  + 10*(i-1), string.format("%s", history2), history2Color+history2Blink)
-
-      --lcd.drawText(wgt.zone.x + 100, wgt.zone.y  + 10*(i-1),
-      --        string.format("C%d: %s/%s", i+1, cell2, history2))
-    end
+    lcd.drawText(wgt.zone.x + 100, wgt.zone.y  + 10*(i-1), string.format("C%d:", i+1), Color)
+    lcd.drawText(wgt.zone.x + 125, wgt.zone.y  + 10*(i-1), string.format("%s", cell2), cell2Color+cell2Blink)
+    lcd.drawText(wgt.zone.x + 155, wgt.zone.y  + 10*(i-1), string.format("/"), Color)
+    lcd.drawText(wgt.zone.x + 160, wgt.zone.y  + 10*(i-1), string.format("%s", history2), history2Color+history2Blink)
+  end
 end
 
 -- ####################################################################
@@ -640,7 +645,12 @@ local function drawBattery(xOrigin, yOrigin, wgt)
   -- draws bat
   lcd.setColor(CUSTOM_COLOR, WHITE)
   lcd.drawRectangle(wgt.zone.x + myBatt.x, wgt.zone.y + myBatt.y, myBatt.w, myBatt.h, CUSTOM_COLOR, 2)
-  lcd.drawFilledRectangle(wgt.zone.x + myBatt.x + myBatt.w, wgt.zone.y + myBatt.h / 2 - myBatt.cath_h / 2, myBatt.cath_w, myBatt.cath_h, CUSTOM_COLOR)
+  lcd.drawFilledRectangle(wgt.zone.x + myBatt.x + myBatt.w,
+          --wgt.zone.y + myBatt.h / 2 - myBatt.cath_h / 2,
+          wgt.zone.y + myBatt.y + myBatt.cath_h / 2 - 2.5,
+          myBatt.cath_w,
+          myBatt.cath_h,
+          CUSTOM_COLOR)
   lcd.drawText(wgt.zone.x + myBatt.x + 20, wgt.zone.y + myBatt.y + 5, string.format("%d%%", BatRemPer), LEFT + MIDSIZE + CUSTOM_COLOR)
 
     -- draw values
@@ -750,21 +760,9 @@ local function refreshZoneXLarge(wgt)
     BlinkWhenZero = BLINK
   end
 
-  cellResult = getValue( VoltageSensor )
-  --if (type(cellResult) == "table") then
-  --  for i, v in ipairs(cellResult) do
-  --    lcd.drawText(wgt.zone.x + 5, wgt.zone.y + fontSize, "BATTERY LEFT", SHADOWED)
-  if not VoltageTableRendered then
-    for i=1, 7, 2 do
-      lcd.drawText(wgt.zone.x, wgt.zone.y  + 10*(i-1),
-              string.format("C%d: ------/------    C%d: ------/------", i, i+1), Color)
-    end
-  end
-  if (type(cellResult) == "table") then
-    VoltageTableRendered = true
-    -- Draw the top-left 1/4 of the screen
-    drawCellVoltage(wgt, cellResult)
-  end
+  -- Draw the top-left 1/4 of the screen
+  drawCellVoltage(wgt, cellResult)
+
   -- Draw the bottom-left 1/4 of the screen
   drawBattery(0, 100, wgt)
 
