@@ -94,6 +94,7 @@
 --  For help using telemetry scripts
 --    http://rcdiy.ca/telemetry-scripts-getting-started/
 local Title = "Flight Battery Monitor"
+local name = "mahRe2"
 
 -- Sensors
 -- 	Use Voltage and or mAh consumed calculated sensor based on VFAS, FrSky FAS-40
@@ -104,6 +105,7 @@ local Title = "Flight Battery Monitor"
 local VoltageSensor = "Cels" -- optional set to "" to ignore
 local mAhSensor = "mAh" -- optional set to "" to ignore
 local CurrentSensor = "Curr"
+local ThrottleId = 1
 
 -- Reserve Capacity
 -- 	Remaining % Displayed = Calculated Remaining % - Reserve %
@@ -125,7 +127,6 @@ local VoltageDelta = .3
 -- Announcements
 local soundDirPath = "/WIDGETS/mahRe2/sounds/" -- where you put the sound files
 local AnnouncePercentRemaining = true -- true to turn on, false for off
-local SillyStuff = false  -- Play some silly/fun sounds
 
 -- Do not change the next line
 local GV = {[1] = 0, [2] = 1, [3] = 2,[4] = 3,[5] = 4,[6] = 5, [7] = 6, [8] = 7, [9] = 8}
@@ -185,14 +186,37 @@ local CellCount 			-- updated in init_func, bg_func
 local VoltsMax 				-- updated in bg_func
 local VoltageHistory = {}   -- updated in bg_func
 
+function loadSched()
+	if not libSCHED then
+	-- Loadable code chunk is called immediately and returns libGUI
+		libSCHED = loadScript("/WIDGETS/" .. name .. "/libscheduler.lua")
+	end
+
+	return libSCHED()
+end
+libscheduler = libscheduler or loadSched()
+local scheduler = libscheduler.new()
+
+function loadHistory()
+	if not libHISTORY then
+	-- Loadable code chunk is called immediately and returns libGUI
+		libHISTORY = loadScript("/WIDGETS/" .. name .. "/libhistory.lua")
+	end
+
+	return libHISTORY()
+end
+libhistory = libhistory or loadHistory()
+local history = libhistory.new(ThrottleId, CurrentSensor, VoltageSensor)
+
+
+
+-- History
+local History = {} -- table containing
+local CurrentSecond = {}
+
 -- Voltage Checking flags
 local CheckBatNotFull = true
 local StartTime = getTime()
-local PlayFirstInconsistentCellWarning = true
-local PlayInconsistentCellWarning = false
-local PlayFirstMissingCellWarning = true
-local PlayMissingCellWarning = true
-local InconsistentCellVoltageDetected = false
 local ResetDebounced = true
 local MaxWatts = "-----"
 local MaxAmps = "-----"
@@ -202,15 +226,13 @@ local BatRemPerFileName = 0		-- updated in PlayPercentRemaining
 local BatRemPerPlayed = 0			-- updated in PlayPercentRemaining
 local AtZeroPlayedCount				-- updated in init_func, PlayPercentRemaining
 local PlayAtZero = 1
---local RxOperational = false
---local BatteryFound = false
 
 -- Display
 local x, y, fontSize, yColumn2
 local xAlign = 0
 
 local BlinkWhenZero = 0 -- updated in run_func
-local Color = GREY
+local Color = BLACK
 
 -- Based on results from http://rcdiy.ca/taranis-q-x7-battery-run-time/
 local VoltToPercentTable = {
@@ -250,6 +272,78 @@ local function getCellVoltage( voltageSensorIn )
 
   return cellSum
 end
+
+
+-- ####################################################################
+local function getThrottlePercentValue(rawThrottle )
+  -- read the throttle value and return it as a percentage
+  -- -1000  == 0%
+  -- 0      == 50%
+  -- 1000   == 100%
+  return 50 + rawThrottle/20
+end
+
+
+-- ####################################################################
+local function getHistory()
+
+  if index > #History then -- we have rolled over the new interval, archive the data
+    print("archiving history")
+    n_amps = 0
+    amps_count, volts_count = 0
+
+    -- Initialize the storage variables
+    if VoltageSensor == "VFAS" then
+      n_voltage = 0
+    else
+      n_voltage = {}
+    end
+
+    -- Add all the values over the previous 1 second period
+    for i, v1 in ipairs(CurrentSecond) do
+      if v1['amps'] ~= nil and v1['amps'] > 0 then
+        n_amps = n_amps + v1['amps']
+        amps_count = amps_count + 1
+      end
+
+      if type(n_voltage) == table then
+        for j, v2 in ipairs(v1['voltage']) do
+          n_voltage[j] = n_voltage[j] + v2
+        end
+        volts_count = volts_count + 1
+      elseif VoltageSensor == "VFAS" then
+        n_voltage = n_voltage + v1['voltage']
+        volts_count = volts_count + 1
+      else
+        print("dropped value")
+      end
+    end
+
+    -- compute the averages
+    avg_amps = n_amps / amps_count
+    if type(n_voltage) == "table" then
+      avg_volts = {}
+      for i, v in ipairs(n_voltage) do
+        avg_volts[i] = n_voltage[i] / volts_count
+      end
+    else
+      avg_volts = n_voltage / volts_count
+    end
+
+    entry = {}
+    entry['amps'] = avg_amps
+    entry['volts'] = avg_volts
+    -- add the averaged values to the History
+    table.insert(History, entry)
+
+    -- reset the CurrentSecond and add in the data
+    CurrentSecond = {}
+  end
+  print("Inserting into CurrentSecond")
+  table.insert(CurrentSecond, now)
+  print("History table lenght: " .. #History)
+end
+
 
 -- ####################################################################
 local function getMaxWatts( voltsNow )
@@ -308,32 +402,9 @@ local function PlayPercentRemaining()
   if BatRemPer <= 0 and AtZeroPlayedCount < PlayAtZero and getRSSI() > 0 then
     print(BatRemPer,AtZeroPlayedCount)
     playFile(soundDirPath.."BatNo.wav")
-    if SillyStuff then
-      playFile(soundDirPath.."Scrash.wav")
-      playFile(soundDirPath.."Samblc.wav")
-      --playFile(soundDirPath.."WrnWzz.wav")
-    end
     AtZeroPlayedCount = AtZeroPlayedCount + 1
   elseif AtZeroPlayedCount == PlayAtZero and BatRemPer > 0 then
     AtZeroPlayedCount = 0
-  end
-end
-
--- ####################################################################
-local function HasSecondsElapsed(numSeconds)
-  -- return true every numSeconds
-  if StartTime == nil then
-    StartTime = getTime()
-  end
-  currTime = getTime()
-  deltaTime = currTime - StartTime
-  deltaSeconds = deltaTime/100 -- covert to seconds
-  deltaTimeMod = deltaSeconds % numSeconds -- return the modulus
-  --print(string.format("deltaTime: %f deltaSeconds: %f deltaTimeMod: %f", deltaTime, deltaSeconds, deltaTimeMod))
-  if math.abs( deltaTimeMod - 0 ) < 1 then
-    return true
-  else
-    return false
   end
 end
 
@@ -381,19 +452,12 @@ local function check_cell_delta_voltage(voltageSensorValue)
         -- print(string.format("i: %d v: %f j: %d v: %f", i, v1, j,v2))
         if i~=j and (math.abs(v1 - v2) > VoltageDelta) then
           --print(string.format("i: %d v: %f j: %d v: %f", i, v1, j,v2))
-          timeElapsed = HasSecondsElapsed(10)  -- check to see if the 10 second timer has elapsed
-          if PlayFirstInconsistentCellWarning or (PlayInconsistentCellWarning == true and timeElapsed) then -- Play immediately upon detection and then every 10 seconds
-            playFile(soundDirPath.."icw.wav")
-            PlayFirstInconsistentCellWarning = false -- clear the first play flag, only reset on reset switch toggle
-            PlayInconsistentCellWarning = false -- clear the playing flag, only reset it at 10 second intervals
-          end
-          if not timeElapsed then  -- debounce so the sound is only played once in 10 seconds
-            PlayInconsistentCellWarning = true
-          end
+          scheduler.add("icw", 10, playFile, soundDirPath.."icw.wav")
           return
         end
       end
     end
+    scheduler.remove("icw")
   end
 end
 
@@ -403,37 +467,16 @@ local function check_for_missing_cells(voltageSensorValue)
   -- This is only for the dedicated voltage sensor
   --print(string.format("CellCount: %d voltageSensorValue:", CellCount))
   if CellCount > 0 then
-    missingCellDetected = false
-    if (type(voltageSensorValue) == "table") then
-      --tableSize = 0 -- Initialize the counter for the cell table size
-      --for i, v in ipairs(voltageSensorValue) do
-      --  tableSize = tableSize + 1
-      --end
-      --if tableSize ~= CellCount then
-      if #voltageSensorValue ~= CellCount then
-        --print(string.format("CellCount: %d tableSize: %d", CellCount, tableSize))
-        missingCellDetected = true
-      end
-    elseif VoltageSensor == "VFAS" and type(voltageSensorValue) == "number" then --this is for the vfas sensor
-      if (CellCount * 3.2) > (voltageSensorValue) then
+    if type(voltageSensorValue) == "table" and #voltageSensorValue ~= CellCount then
+      --print(string.format("CellCount: %d tableSize: %d", CellCount, tableSize))
+      scheduler.add("mcw", 10, playFile, soundDirPath.."mcw.wav")
+      return
+    elseif VoltageSensor == "VFAS" and type(voltageSensorValue) == "number" and (CellCount * 3.2) > voltageSensorValue then
         --print(string.format("vfas missing cell: %d", voltageSensorValue))
-        missingCellDetected = true
-      end
+        scheduler.add("mcw", 10, playFile, soundDirPath.."mcw.wav")
+        return
     end
-
-    if missingCellDetected then
-      --print("tableSize =~= CellCount: missing cell detected")
-      timeElapsed = HasSecondsElapsed(10)
-      if PlayFirstMissingCellWarning or (PlayMissingCellWarning and timeElapsed) then -- Play immediately and then every 10 seconds
-        playFile(soundDirPath.."mcw.wav")
-        --print("play missing cell wav")
-        PlayMissingCellWarning = false
-        PlayFirstMissingCellWarning = false
-      end
-      if not timeElapsed then  -- debounce so the sound is only played once in 10 seconds
-        PlayMissingCellWarning = true
-      end
-    end
+    scheduler.remove("mcw")
   end
 end
 
@@ -456,6 +499,8 @@ local function voltage_sensor_tests()
 
     -- check condition 3: all cells present
       check_for_missing_cells(cellResult)
+
+      --getHistory()
   end
 end
 
@@ -480,26 +525,27 @@ end
 -- ####################################################################
 local function reset_if_needed()
   -- test if the reset switch is toggled, if so then reset all internal flags
+  -- print("reset_sw: " .. getValue(SwReset))
   if SwReset ~= "" then -- Update switch position
-    if ResetDebounced and HasSecondsElapsed(2) and -1024 ~= getValue(SwReset) then -- reset switch
+    --if ResetDebounced and HasSecondsElapsed(2) and -1024 ~= getValue(SwReset) then -- reset switch
+    local debounced = scheduler.check('reset_sw')
+    if (debounced == nil or debounced == true) and -1024 ~= getValue(SwReset) then -- reset switch
+      scheduler.add('reset_sw', 2)
+      scheduler.clear('reset_sw')
       print("reset switch toggled")
       CheckBatNotFull = true
       StartTime = nil
-      PlayInconsistentCellWarning = true
-      PlayFirstMissingCellWarning = true
-      PlayMissingCellWarning = true
-      PlayFirstInconsistentCellWarning = true
-      InconsistentCellVoltageDetected = false
       VoltageHistory = {}
       ResetDebounced = false
       VoltsNow = 0
       MaxWatts = "-----"
       MaxAmps = "-----"
+      CurrentSecond = {}
+      scheduler.reset()
+      history = libhistory.new(ThrottleId, CurrentSensor, VoltageSensor)
       --print("reset event")
-    end
-    if not HasSecondsElapsed(2) then
-      --print("debounced")
-      ResetDebounced = true
+    elseif -1024 == getValue(SwReset) then
+      scheduler.remove('reset_sw')
     end
   end
 end
@@ -508,6 +554,9 @@ end
 local function bg_func()
 
   reset_if_needed() -- test if the reset switch is toggled, if so then reset all internal flags
+  scheduler.tick() -- deal with all scheduled tasks
+  history.tick()
+
   -- Check in battery capacity was changed
   if BatCapFullmAh ~= model.getGlobalVariable(GVBatCap, GVFlightMode) * 100 then
     init_func()
@@ -630,7 +679,7 @@ local function drawBattery(xOrigin, yOrigin, wgt)
                      ["cath_w"] = 6,
                      ["cath_h"] = 20 }
 
-  lcd.setColor(CUSTOM_COLOR, wgt.options.Color)
+  --lcd.setColor(CUSTOM_COLOR, wgt.options.Color)
 
   if BatRemPer > 0 then -- Don't blink
     BlinkWhenZero = 0
@@ -686,7 +735,7 @@ local function refreshZoneSmall(wgt)
   lcd.drawGauge(wgt.zone.x + 2, wgt.zone.y + 2, myBatt.w - 4, wgt.zone.h, BatRemPer, 100, CUSTOM_COLOR)
 
   -- write text
-  lcd.setColor(CUSTOM_COLOR, wgt.options.Color)
+  --lcd.setColor(CUSTOM_COLOR, wgt.options.Color)
   local topLine = string.format("%d      %d%%", BatRemainmAh, BatRemPer)
   lcd.drawText(wgt.zone.x + 20, wgt.zone.y + 2, topLine, MIDSIZE + CUSTOM_COLOR + BlinkWhenZero)
 end
@@ -695,37 +744,12 @@ end
 local function refreshZoneMedium(wgt)
   --- Size is 225x98 1/4th  (no sliders/trim)
   drawBattery(0,0, wgt)
-
-  --local myBatt = { ["x"] = 0, ["y"] = 0, ["w"] = 85, ["h"] = 35, ["segments_w"] = 15, ["color"] = WHITE, ["cath_w"] = 6, ["cath_h"] = 20 }
-  --
-  --lcd.setColor(CUSTOM_COLOR, wgt.options.Color)
-  --
-  --if BatRemPer > 0 then -- Don't blink
-  --  BlinkWhenZero = 0
-  --else
-  --  BlinkWhenZero = BLINK
-  --end
-  --
-  ---- fill batt
-  --lcd.setColor(CUSTOM_COLOR, getPercentColor(BatRemPer))
-  --lcd.drawGauge(wgt.zone.x + myBatt.x, wgt.zone.y + myBatt.y, myBatt.w, myBatt.h, BatRemPer, 100, CUSTOM_COLOR)
-  --
-  ---- draws bat
-  --lcd.setColor(CUSTOM_COLOR, WHITE)
-  --lcd.drawRectangle(wgt.zone.x + myBatt.x, wgt.zone.y + myBatt.y, myBatt.w, myBatt.h, CUSTOM_COLOR, 2)
-  --lcd.drawFilledRectangle(wgt.zone.x + myBatt.x + myBatt.w, wgt.zone.y + myBatt.h / 2 - myBatt.cath_h / 2, myBatt.cath_w, myBatt.cath_h, CUSTOM_COLOR)
-  --lcd.drawText(wgt.zone.x + myBatt.x + 20, wgt.zone.y + myBatt.y + 5, string.format("%d%%", BatRemPer), LEFT + MIDSIZE + CUSTOM_COLOR)
-  --
-  --  -- draw values
-  --lcd.drawText(wgt.zone.x + myBatt.x, wgt.zone.y + myBatt.y + 35,
-  --        string.format("%d mAh", BatRemainmAh), DBLSIZE + CUSTOM_COLOR + BlinkWhenZero)
-
 end
 
 -- ####################################################################
 local function refreshZoneLarge(wgt)
   --- Size is 192x152 1/2
-  lcd.setColor(CUSTOM_COLOR, wgt.options.Color)
+  --lcd.setColor(CUSTOM_COLOR, wgt.options.Color)
   
   fontSize = 10
   
@@ -739,7 +763,7 @@ local function refreshZoneLarge(wgt)
   lcd.drawText(wgt.zone.x + 5, wgt.zone.y + fontSize + 25, round(BatRemPer).."%" , DBLSIZE + SHADOWED + BlinkWhenZero)
   lcd.drawText(wgt.zone.x + 5, wgt.zone.y + fontSize + 55, math.floor(BatRemainmAh).."mAh" , DBLSIZE + SHADOWED + BlinkWhenZero)
 
-  lcd.setColor(CUSTOM_COLOR, wgt.options.Color)
+  --lcd.setColor(CUSTOM_COLOR, wgt.options.Color)
   lcd.drawRectangle((wgt.zone.x - 1) , (wgt.zone.y + (wgt.zone.h - 31)), (wgt.zone.w + 2), 32, 0)
   lcd.setColor(CUSTOM_COLOR, getPercentColor(BatRemPer))
   lcd.drawGauge(wgt.zone.x , (wgt.zone.y + (wgt.zone.h - 30)), wgt.zone.w, 30, BatRemPer, 100, BlinkWhenZero)
@@ -750,7 +774,7 @@ end
 local function refreshZoneXLarge(wgt)
   --- Size is 390x172 1/1
   --- Size is 460x252 1/1 (no sliders/trim/topbar)
-  lcd.setColor(CUSTOM_COLOR, wgt.options.Color)
+  --lcd.setColor(CUSTOM_COLOR, wgt.options.Color)
   local CUSTOM_COLOR = WHITE
   fontSize = 10
 
@@ -785,26 +809,6 @@ local function refreshZoneXLarge(wgt)
   --lcd.drawText(wgt.zone.x + 190, wgt.zone.y + 85, string.format("%sW", MaxWatts), XXLSIZE + Color)
   lcd.drawText(wgt.zone.x + 185, wgt.zone.y + 85, string.format("%.2fV", VoltsNow), XXLSIZE + Color)
 
-  --lcd.drawText(wgt.zone.x + 5, wgt.zone.y + fontSize, "BATTERY LEFT", SHADOWED)
-  --lcd.setColor(CUSTOM_COLOR, getPercentColor(BatRemPer))
-  --lcd.drawText(wgt.zone.x + 5, wgt.zone.y + fontSize + 25, round(BatRemPer).."%" , DBLSIZE + SHADOWED + BlinkWhenZero)
-  --lcd.drawText(wgt.zone.x + 5, wgt.zone.y + fontSize + 55, math.floor(BatRemainmAh).."mAh" , DBLSIZE + SHADOWED + BlinkWhenZero)
-  --
-  --lcd.setColor(CUSTOM_COLOR, wgt.options.Color)
-  --lcd.drawRectangle((wgt.zone.x - 1) , (wgt.zone.y + (wgt.zone.h - 31)), (wgt.zone.w + 2), 32, 0)
-  --lcd.setColor(CUSTOM_COLOR, getPercentColor(BatRemPer))
-  --lcd.drawGauge(wgt.zone.x , (wgt.zone.y + (wgt.zone.h - 30)), wgt.zone.w, 30, BatRemPer, 100, BlinkWhenZero)
-end
-
--- ####################################################################
-local function run_func(wgt)	-- Called periodically when screen is visible
-  bg_func()
-  if     wgt.zone.w  > 380 and wgt.zone.h > 165 then refreshZoneXLarge(wgt)
-  elseif wgt.zone.w  > 180 and wgt.zone.h > 145 then refreshZoneLarge(wgt)
-  elseif wgt.zone.w  > 170 and wgt.zone.h >  65 then refreshZoneMedium(wgt)
-  elseif wgt.zone.w  > 150 and wgt.zone.h >  28 then refreshZoneSmall(wgt)
-  elseif wgt.zone.w  >  65 and wgt.zone.h >  35 then refreshZoneTiny(wgt)
-  end
 end
 
 -- ####################################################################
@@ -819,10 +823,11 @@ function update(Context, options)
   mAhSensor = options.mAh
   VoltageSensor = options.Voltage
   CurrentSensor = options.Current
-  Color = options.Color
+  --Color = options.Color
   Context.options = options
   Context.back = nil
-  SillyStuff = options.FunStuff
+  SwReset = options.Reset
+  ThrottleId = options.Throttle
 end
 
 -- ####################################################################
@@ -831,16 +836,39 @@ function background(Context)
 end
 
 -- ####################################################################
-function refresh(Context)
-  run_func(Context)
+function refresh(wgt, event, touchState)
+  -- Called periodically when screen is visible
+  --for key,value in pairs(wgt.zone) do
+  --  print("found member " .. key .. " value: ".. value);
+  --end
+
+  --if do_once then
+  --  for switchIndex, switchName in switches() do
+  --    print(switchIndex .. switchName)
+  --  end
+  --  do_once = false
+  --end
+
+  if event == nil then -- Widget mode
+    bg_func()
+    if     wgt.zone.w  > 380 and wgt.zone.h > 165 then refreshZoneXLarge(wgt)
+    elseif wgt.zone.w  > 180 and wgt.zone.h > 145 then refreshZoneLarge(wgt)
+    elseif wgt.zone.w  > 170 and wgt.zone.h >  65 then refreshZoneMedium(wgt)
+    elseif wgt.zone.w  > 150 and wgt.zone.h >  28 then refreshZoneSmall(wgt)
+    elseif wgt.zone.w  >  65 and wgt.zone.h >  35 then refreshZoneTiny(wgt)
+    end
+  else
+    print("full screen")
+  end
 end
 
 local options = {
   { "mAh", SOURCE, mAh }, -- Defines source Battery Current Sensor
-  { "Voltage", SOURCE, CEL1 }, -- Defines source Battery Voltage Sensor
+  { "Voltage", SOURCE, Cels }, -- Defines source Battery Voltage Sensor
   { "Current", SOURCE, Curr },
-  { "Color", COLOR, GREY },
-  { "FunStuff", BOOL, 0  }
+  { "Reset", SOURCE, 125 }, -- Defines the switch to use to reset the stored data
+  { "Throttle", SOURCE, 1 }, -- 204==CH3
+  -- { "Color", COLOR, GREY },
 }
 
 return { name="mahRe2", options=options, create=create, update=update, refresh=refresh, background=background }
