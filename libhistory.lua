@@ -13,12 +13,13 @@ function lib.new(tid, cs, vs)
         data = {},
         data_size = 0,
         now = nil,
-        maxAmps = 0,
-        maxWatts = 0,
+        maxAmps = "-----",
+        maxWatts = "-----",
         throttleId = tid,
         currentSensor = cs,
         voltageSensor = vs,
-        pause_start_time = nil
+        pause_start_time = nil,
+        cellLowVoltage = {}              --the low value of each cell
     }
 
     function history.is_paused(rawThrottle, current_time)
@@ -28,7 +29,7 @@ function lib.new(tid, cs, vs)
         --    print("history.pause_start_time is nil")
         --end
         if rawThrottle == -1024 and history.pause_start_time == nil then
-            -- thrott is off but hasn't been detected before now
+            -- throttle is off but hasn't been detected before now
             history.pause_start_time = current_time
             --print("not paused 1")
             return false
@@ -42,7 +43,7 @@ function lib.new(tid, cs, vs)
             --print("setting pause")
             return true
         elseif rawThrottle > -1024 then
-            -- thottle is engaged, clear paused timer
+            -- throttle is engaged, clear paused timer
             history.pause_start_time = nil
             --print("not paused 3")
             return false
@@ -61,7 +62,7 @@ function lib.new(tid, cs, vs)
 
     function history.printTable(name, t)
         print("*************************************\n")
-        print("\ndump of table: " .. name)
+        print("\n dump of table: " .. name)
         if type(t) == 'table' then
             for i,v in ipairs(t) do
                 print("i: " .. i .. " v: ".. v)
@@ -103,7 +104,7 @@ function lib.new(tid, cs, vs)
         return true
     end
 
-    function history.add(time, now)
+    function history.add(now)
         print("history.data_size: " .. history.data_size)
 
         if not history.checkVoltageDataType(now.voltage) then
@@ -126,10 +127,11 @@ function lib.new(tid, cs, vs)
                 now.amps ~= history.data[history.data_size].amps or
                 not history.compareVoltage(now.voltage, history.data[history.data_size].voltage)
         then
-            print("added history")
+            --print("added history")
             history.data_size = history.data_size + 1
             history.data[history.data_size] = now
             history.now = now
+            history.getMaxValues()
         end
     end
 
@@ -141,22 +143,59 @@ function lib.new(tid, cs, vs)
         now.time = deltaTime
         now["rawThrottle"] = getValue(history.throttleId)
         if not history.is_paused(now["rawThrottle"], time) then
-            print("deltaTime: " .. deltaTime)
-            print("rawThrottle: " .. now.rawThrottle)
+            --print("deltaTime: " .. deltaTime)
+            --print("rawThrottle: " .. now.rawThrottle)
             -- CurrentSensor is defined in the main.lua
             if history.currentSensor ~= "" then
                 now.amps = getValue( history.currentSensor )
-                if now.amps > history.maxAmps then
-                    history.maxAmps = now['amps']
-                end
+            else
+                now.amps = 0
             end
 
             if history.voltageSensor ~= "" then
-                now['voltage']  = getValue(history.voltageSensor)
+                now.voltage  = getValue(history.voltageSensor)
+            else
+                now.voltage = 0
             end
-            history.add(deltaTime, now)
-            print("data data_size=" .. history.len())
+            history.add(now)
+            --print("data data_size=" .. history.len())
         end
+    end
+
+    function history.getTotalVolts()
+        -- For voltage sensors that return a table of sensors, add up the cell
+        -- voltages to get a total cell voltage.
+        -- Otherwise, just return the value
+        if history.now ~= nil and history.now.voltage ~= nil then
+            if  type(history.now.voltage) == 'number' then
+                return history.now.voltage
+            elseif type(history.now) == 'table' then
+                local volts = 0
+                for i,v in ipairs(history.now.voltage) do
+                    volts = volts + v
+                    if history.cellLowVoltage[i] == nil or history.cellLowVoltage[i] > v then
+                        history.cellLowVoltage[i] = v
+                    end
+                end
+                return volts
+            end
+        end
+        return 0
+    end
+
+    function history.getMaxValues()
+      if history.currentSensor ~= "" then
+        if type(history.now.amps) == "number" then
+          if type(history.maxAmps) == "string" or (type(history.maxAmps) == "number"
+                  and history.now.amps > history.maxAmps) then
+            history.maxAmps = history.now.amps
+          end
+          local watts = history.now.amps * history.getTotalVolts()
+          if type(history.maxWatts) == "string" or watts > history.maxWatts then
+            history.maxWatts = watts
+          end
+        end
+      end
     end
 
     return history

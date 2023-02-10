@@ -13,14 +13,14 @@
 -- Web: http://RCdiy.ca
 -- Date: 2016 June 28
 -- Update: 2017 March 27
--- Update: 2019 November 21 by daveEccleston (Handles sensors returning a table of cell voltages)
+-- Update: 2019 November 21 by Dave Eccleston (Handles sensors returning a table of cell voltages)
 -- Update: 2022 July 15 by David Morrison (Converted to OpenTX Widget for Horus and TX16S radios)
 --
--- Reauthored: Dean Church
+-- Re-authored: Dean Church
 -- Date: 2017 March 25
 -- Thanks: TrueBuild (ideas)
 --
--- Re-Reauthored: David Morrison
+-- Re-Re-authored: David Morrison
 -- Date: 2022 December 1
 --
 -- Changes/Additions:
@@ -83,11 +83,11 @@
 -- 			L11 - GV9 < 50
 -- 			SF4 - L11 Play Value GV9 30s
 -- 			SF5 - L11 Play Track #PrcntRm 30s
--- 				After the remaining battery capicity drops below 50% the percentage
+-- 				After the remaining battery capacity drops below 50% the percentage
 -- 				remaining will be announced every 30 seconds.
 -- 	L12 - GV9 < 10
 -- 	SF3 - L12 Play Track batcrit
--- 				After the remaining battery capicity drops below 50% a battery
+-- 				After the remaining battery capacity drops below 50% a battery
 -- 				critical announcement will be made every 10 seconds.
 
 -- Configurations
@@ -154,17 +154,6 @@ local GVBatCap = GV[7] 	-- Read Battery Capacity, 8 for 800mAh, 22 for 2200mAh
 -- which may not be as accurate.
 local GVFlightMode = 0 -- Use a different flight mode if running out of GVs
 
-local WriteGVBatRemmAh = false-- set to false to turn off write
-local WriteGVBatRemPer = false
--- If writes are false then the corresponding GV below will not be used and these
---	lines can be ignored.
-local GVBatRemmAh = GV[8] -- Write remaining mAh, 2345 mAh will be writen as 23, floor(2345/100)
-local GVBatRemPer = GV[9] -- Write remaining percentage, 76.7% will be writen as 76, floor(76)
-
--- If you have set either write to false you may set the corresponding
---	variable to ""
--- example local GVBatRemmAh = ""
-
 -- ----------------------------------------------------------------------------------------
 -- ----------------------------------------------------------------------------------------
 -- AVOID EDITING BELOW HERE
@@ -183,8 +172,6 @@ local BatRemPer 			-- updated in init_func, bg_func
 local VoltsPercentRem -- updated in init_func, bg_func
 local VoltsNow 	= 0			-- updated in bg_func
 local CellCount 			-- updated in init_func, bg_func
-local VoltsMax 				-- updated in bg_func
-local VoltageHistory = {}   -- updated in bg_func
 
 function loadSched()
 	if not libSCHED then
@@ -208,18 +195,8 @@ end
 libhistory = libhistory or loadHistory()
 local history = libhistory.new(ThrottleId, CurrentSensor, VoltageSensor)
 
-
-
--- History
-local History = {} -- table containing
-local CurrentSecond = {}
-
 -- Voltage Checking flags
 local CheckBatNotFull = true
-local StartTime = getTime()
-local ResetDebounced = true
-local MaxWatts = "-----"
-local MaxAmps = "-----"
 
 -- Announcements
 local BatRemPerFileName = 0		-- updated in PlayPercentRemaining
@@ -228,8 +205,7 @@ local AtZeroPlayedCount				-- updated in init_func, PlayPercentRemaining
 local PlayAtZero = 1
 
 -- Display
-local x, y, fontSize, yColumn2
-local xAlign = 0
+local fontSize
 
 local BlinkWhenZero = 0 -- updated in run_func
 local Color = BLACK
@@ -249,32 +225,6 @@ local SoundsTable = {[5] = "Bat5L.wav",[10] = "Bat10L.wav",[20] = "Bat20L.wav"
   ,[90] = "Bat90L.wav"}
 
 -- ####################################################################
-local function getCellVoltage( voltageSensorIn ) 
-  -- For voltage sensors that return a table of sensors, add up the cell 
-  -- voltages to get a total cell voltage.
-  -- Otherwise, just return the value
-  cellResult = getValue( voltageSensorIn )
-  cellSum = 0
-
-  if (type(cellResult) == "table") then
-    for i, v in ipairs(cellResult) do
-      cellSum = cellSum + v
-
-      -- update the historical voltage table
-      if (VoltageHistory[i] and VoltageHistory[i] > v) or VoltageHistory[i] == nil then
-        VoltageHistory[i] = v
-      end
-
-    end
-  else 
-    cellSum = cellResult
-  end
-
-  return cellSum
-end
-
-
--- ####################################################################
 local function getThrottlePercentValue(rawThrottle )
   -- read the throttle value and return it as a percentage
   -- -1000  == 0%
@@ -283,83 +233,6 @@ local function getThrottlePercentValue(rawThrottle )
   return 50 + rawThrottle/20
 end
 
-
--- ####################################################################
-local function getHistory()
-
-  if index > #History then -- we have rolled over the new interval, archive the data
-    print("archiving history")
-    n_amps = 0
-    amps_count, volts_count = 0
-
-    -- Initialize the storage variables
-    if VoltageSensor == "VFAS" then
-      n_voltage = 0
-    else
-      n_voltage = {}
-    end
-
-    -- Add all the values over the previous 1 second period
-    for i, v1 in ipairs(CurrentSecond) do
-      if v1['amps'] ~= nil and v1['amps'] > 0 then
-        n_amps = n_amps + v1['amps']
-        amps_count = amps_count + 1
-      end
-
-      if type(n_voltage) == table then
-        for j, v2 in ipairs(v1['voltage']) do
-          n_voltage[j] = n_voltage[j] + v2
-        end
-        volts_count = volts_count + 1
-      elseif VoltageSensor == "VFAS" then
-        n_voltage = n_voltage + v1['voltage']
-        volts_count = volts_count + 1
-      else
-        print("dropped value")
-      end
-    end
-
-    -- compute the averages
-    avg_amps = n_amps / amps_count
-    if type(n_voltage) == "table" then
-      avg_volts = {}
-      for i, v in ipairs(n_voltage) do
-        avg_volts[i] = n_voltage[i] / volts_count
-      end
-    else
-      avg_volts = n_voltage / volts_count
-    end
-
-    entry = {}
-    entry['amps'] = avg_amps
-    entry['volts'] = avg_volts
-    -- add the averaged values to the History
-    table.insert(History, entry)
-
-    -- reset the CurrentSecond and add in the data
-    CurrentSecond = {}
-  end
-  print("Inserting into CurrentSecond")
-  table.insert(CurrentSecond, now)
-  print("History table lenght: " .. #History)
-end
-
-
--- ####################################################################
-local function getMaxWatts( voltsNow )
-  if CurrentSensor ~= "" then
-    amps = getValue( CurrentSensor )
-    if type(amps) == "number" then
-      if type(MaxAmps) == "string" or (type(MaxAmps) == "number" and amps > MaxAmps) then
-        MaxAmps = amps
-      end
-      watts = amps * voltsNow
-      if type(MaxWatts) == "string" or watts > MaxWatts then
-        MaxWatts = watts
-      end
-    end
-  end
-end
 
 -- ####################################################################
 local function findPercentRem( cellVoltage )
@@ -409,37 +282,33 @@ local function PlayPercentRemaining()
 end
 
 -- ####################################################################
-local function check_for_full_battery(voltageSensorValue)
+local function check_for_full_battery()
   -- check condition 1: at reset that all voltages > CellFullVoltage volts
-  if BatUsedmAh == 0 then -- BatUsedmAh is only 0 at reset
-    --print(string.format("CheckBatNotFull: %s type: %s", CheckBatNotFull, type(voltageSensorValue)))
-    if CheckBatNotFull then  -- global variable to gate this so this check is only done once after reset
-      playBatNotFullWarning = false
-      if (type(voltageSensorValue) == "table") then -- check to see if this is the dedicated voltage sensor
-        print("flvss cell detection")
-        for i, v in ipairs(voltageSensorValue) do
-          if v < CellFullVoltage then
-            --print(string.format("flvss i: %d v: %f", i,v))
-            playBatNotFullWarning = true
-            break
-          end
-        end
-        CheckBatNotFull = false  -- since we have done the check, set to false so it is not ran again
-      elseif VoltageSensor == "VFAS" and type(voltageSensorValue) == "number" then --this is for the vfas sensor
-        print(string.format("vfas: %f", voltageSensorValue))
-        --(string.format("vfas value: %d", voltageSensorValue))
-        if voltageSensorValue < (CellFullVoltage - .001) then
-          --print("vfas cell not full detected")
+  --print(string.format("CheckBatNotFull: %s type: %s", CheckBatNotFull, type(voltageSensorValue)))
+  if CheckBatNotFull and VoltageSensor ~= "" then  -- global variable to gate this so this check is only done once after reset
+    local playBatNotFullWarning = false
+    local voltageSensorValue  = getValue(VoltageSensor)
+    if (type(voltageSensorValue) == "table") then -- check to see if this is the dedicated voltage sensor
+      --print("flvss cell detection")
+      for i, v in ipairs(voltageSensorValue) do
+        if v < CellFullVoltage then
+          --print(string.format("flvss i: %d v: %f", i,v))
           playBatNotFullWarning = true
+          break
         end
-        CheckBatNotFull = false  -- since we have done the check, set to false so it is not ran again
       end
-      if playBatNotFullWarning then
-        playFile(soundDirPath.."BNFull.wav")
-        playBatNotFullWarning = false
+      CheckBatNotFull = false  -- since we have done the check, set to false so it is not ran again
+    elseif VoltageSensor == "VFAS" and type(voltageSensorValue) == "number" then --this is for the vfas sensor
+      if voltageSensorValue < (CellFullVoltage * CellCount ) then
+        playBatNotFullWarning = true
       end
-    end -- CheckBatNotfull
-  end -- BatUsedmAh
+      CheckBatNotFull = false  -- since we have done the check, set to false so it is not ran again
+    end
+    if playBatNotFullWarning then
+      playFile(soundDirPath.."BNFull.wav")
+      playBatNotFullWarning = false
+    end
+  end -- CheckBatNotfull
 end
 
 -- ####################################################################
@@ -487,12 +356,13 @@ local function voltage_sensor_tests()
   -- 3. if number of cells are set in GV6, check to see that all are showing voltage
 
   --print("check_initial_battery_voltage")
-  if VoltageSensor ~= "" then
-    --print("getting VoltageSensor data")
-    cellResult = getValue( VoltageSensor )
 
-    -- check condition 1: at reset that all voltages > 4.0 volts
-      check_for_full_battery(cellResult)
+  -- check condition 1: at reset that all voltages > 4.0 volts
+  check_for_full_battery()
+
+  if history.now ~= nil and history.now.voltage ~= nil then
+    --print("getting VoltageSensor data")
+    cellResult = history.now.voltage
 
     -- check condition 2: delta voltage
       check_cell_delta_voltage(cellResult)
@@ -500,7 +370,6 @@ local function voltage_sensor_tests()
     -- check condition 3: all cells present
       check_for_missing_cells(cellResult)
 
-      --getHistory()
   end
 end
 
@@ -534,13 +403,7 @@ local function reset_if_needed()
       scheduler.clear('reset_sw')
       print("reset switch toggled")
       CheckBatNotFull = true
-      StartTime = nil
-      VoltageHistory = {}
-      ResetDebounced = false
       VoltsNow = 0
-      MaxWatts = "-----"
-      MaxAmps = "-----"
-      CurrentSecond = {}
       scheduler.reset()
       history = libhistory.new(ThrottleId, CurrentSensor, VoltageSensor)
       --print("reset event")
@@ -578,15 +441,11 @@ local function bg_func()
   end -- mAhSensor ~= ""
 
   if VoltageSensor ~= "" then
-    volts = getCellVoltage(VoltageSensor)
+    volts = history.getTotalVolts()
     if VoltsNow < 1 or volts > 1 then
       VoltsNow = volts
     end
-    --VoltsNow = getCellVoltage(VoltageSensor)
-    VoltsMax = getCellVoltage(VoltageSensor.."+")
-    getMaxWatts(VoltsNow)
 
-    --CellCount = math.ceil(VoltsMax / 4.25)
     if CellCount > 0 then
       VoltsPercentRem  = findPercentRem( VoltsNow/CellCount )
     end
@@ -595,25 +454,12 @@ local function bg_func()
   -- Update battery remaining percent
   if UseVoltsNotmAh then
     BatRemPer = VoltsPercentRem - CapacityReservePercent
-    --elseif BatCapFullmAh > 0 then
   elseif BatCapmAh > 0 then
-    -- BatRemPer = math.floor( (BatRemainmAh / BatCapFullmAh) * 100 ) - CapacityReservePercent
     BatRemPer = math.floor( (BatRemainmAh / BatCapFullmAh) * 100 )
   end
   if AnnouncePercentRemaining then
     PlayPercentRemaining()
   end
-  if WriteGVBatRemmAh == true then
-    model.setGlobalVariable(GVBatRemmAh, GVFlightMode, math.floor(BatRemainmAh/100))
-  end
-  if WriteGVBatRemPer == true then
-    model.setGlobalVariable(GVBatRemPer, GVFlightMode, BatRemPer)
-  end
-  --print(string.format("\nBatRemainmAh: %d", BatRemainmAh))
-  --print(string.format("BatRemPer: %d", BatRemPer))
-  --print(string.format("CellCount: %d", CellCount))
-  --print(string.format("VoltsMax: %d", VoltsMax))
-  --print(string.format("BatUsedmAh: %d", BatUsedmAh))
   voltage_sensor_tests()
 end
 
@@ -634,26 +480,31 @@ local function formatCellVoltage(voltage)
   if type(voltage) == "number" then
     vColor, blinking = Color, 0
     if voltage < 3.7 then vColor, blinking = RED, BLINK end
-    return string.format("%.2f", voltage), vColor, blinking
+    return string.format("%.2f", voltage), vColor, 0
   else
     return "------", Color, 0
   end
 end
 
 -- ####################################################################
-local function drawCellVoltage(wgt, cellResult)
+local function drawCellVoltage(wgt)
   -- Draw the voltage table for the current/low cell voltages
   -- this should use ~1/4 screen
-  cellResult = getValue( VoltageSensor )
-  if (type(cellResult) ~= "table") then
-   cellResult = {}
+  local cell1, cell1Color, cell1Blink
+  local history1, history1Color, history1Blink
+  local cell2, cell2Color, cell2Blink
+  local history2, history2Color,history2Blink
+
+  local cellResult = {}
+  if history.now and history.now.voltage then
+    cellResult = history.now.voltage
   end
 
   for i=1, 7, 2 do
     cell1, cell1Color, cell1Blink = formatCellVoltage(cellResult[i])
-    history1, history1Color, history1Blink = formatCellVoltage(VoltageHistory[i])
+    history1, history1Color, history1Blink = formatCellVoltage(history.cellLowVoltage[i])
     cell2, cell2Color, cell2Blink = formatCellVoltage(cellResult[i+1])
-    history2, history2Color, history2Blink = formatCellVoltage(VoltageHistory[i+1])
+    history2, history2Color, history2Blink = formatCellVoltage(history.cellLowVoltage[i+1])
 
     -- C1: C.cc/H.hh  C2: C.cc/H.hh
     lcd.drawText(wgt.zone.x, wgt.zone.y  + 10*(i-1), string.format("C%d:", i), Color)
@@ -775,7 +626,6 @@ local function refreshZoneXLarge(wgt)
   --- Size is 390x172 1/1
   --- Size is 460x252 1/1 (no sliders/trim/topbar)
   --lcd.setColor(CUSTOM_COLOR, wgt.options.Color)
-  local CUSTOM_COLOR = WHITE
   fontSize = 10
 
   if BatRemPer > 0 then -- Don't blink
@@ -785,7 +635,7 @@ local function refreshZoneXLarge(wgt)
   end
 
   -- Draw the top-left 1/4 of the screen
-  drawCellVoltage(wgt, cellResult)
+  drawCellVoltage(wgt)
 
   -- Draw the bottom-left 1/4 of the screen
   drawBattery(0, 100, wgt)
@@ -793,15 +643,23 @@ local function refreshZoneXLarge(wgt)
   -- Draw the top-right 1/4 of the screen
   --lcd.drawText(wgt.zone.x + 270, wgt.zone.y + -5, string.format("%.2fV", VoltsNow), DBLSIZE + Color)
   lcd.drawText(wgt.zone.x + 210, wgt.zone.y + -5, "Current/Max", DBLSIZE + Color + SHADOWED)
-  amps = getValue( CurrentSensor )
-  --lcd.drawText(wgt.zone.x + 270, wgt.zone.y + 25, string.format("%.1fA", amps), DBLSIZE + Color)
-  lcd.drawText(wgt.zone.x + 210, wgt.zone.y + 30, string.format("%.0fA/%.0fA", amps, MaxAmps), MIDSIZE + Color)
+  local amps = 0
+  if history.now and history.now.amps then
+    amps = history.now.amps
+  end
+
+  --print("maxAmps:", history.maxAmps)
+  if type(history.maxAmps) == 'string' then
+    lcd.drawText(wgt.zone.x + 210, wgt.zone.y + 30, string.format("%.0fA/%s", amps, history.maxAmps), MIDSIZE + Color)
+  else
+    lcd.drawText(wgt.zone.x + 210, wgt.zone.y + 30, string.format("%.0fA/%.0fA", amps, history.maxAmps), MIDSIZE + Color)
+  end
   watts = math.floor(amps * VoltsNow)
 
-  if type(MaxWatts) == "string" then
-    sMaxWatts = MaxWatts
-  elseif type(MaxWatts) == "number" then
-    sMaxWatts = string.format("%.0f", MaxWatts)
+  if type(history.maxWatts) == "string" then
+    sMaxWatts = history.maxWatts
+  elseif type(history.maxWatts) == "number" then
+    sMaxWatts = string.format("%.0f", history.maxWatts)
   end
   lcd.drawText(wgt.zone.x + 210, wgt.zone.y + 55, string.format("%.0fW/%sW", watts, sMaxWatts), MIDSIZE + Color)
 
@@ -838,17 +696,6 @@ end
 -- ####################################################################
 function refresh(wgt, event, touchState)
   -- Called periodically when screen is visible
-  --for key,value in pairs(wgt.zone) do
-  --  print("found member " .. key .. " value: ".. value);
-  --end
-
-  --if do_once then
-  --  for switchIndex, switchName in switches() do
-  --    print(switchIndex .. switchName)
-  --  end
-  --  do_once = false
-  --end
-
   if event == nil then -- Widget mode
     bg_func()
     if     wgt.zone.w  > 380 and wgt.zone.h > 165 then refreshZoneXLarge(wgt)
