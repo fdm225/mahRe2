@@ -139,7 +139,7 @@ function lib.new(tid, cs, vs)
 
         local time = getTime()
         local deltaTime = time - history.start
-        now = {} -- placeholder for current data
+        local now = {} -- placeholder for current data
         now.time = deltaTime
         now["rawThrottle"] = getValue(history.throttleId)
         if not history.is_paused(now["rawThrottle"], time) then
