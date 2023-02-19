@@ -105,20 +105,20 @@ function lib.new(tid, cs, vs)
     end
 
     function history.add(now)
-        print("history.data_size: " .. history.data_size)
+        --print("history.data_size: " .. history.data_size)
 
         if not history.checkVoltageDataType(now.voltage) then
-            print("invalid voltage type detected for ", history.voltageSensor)
+            --print("invalid voltage type detected for ", history.voltageSensor)
             return
         end
 
         if now.rawThrottle == nil or now.amps == nil or now.voltage == nil then
-            print("skipped history")
+            --print("skipped history")
             return
         end
 
         if history.data_size > 0 and now.time == history.data[history.data_size].time then
-            print("duplicate tick")
+            --print("duplicate tick")
             return
         end
 
