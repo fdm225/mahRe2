@@ -155,7 +155,7 @@ function lib.new(History)
         local history2, history2Color, history2Blink
 
         local cellResult = {}
-        if gui.history.now and gui.history.now.voltage then
+        if gui.history and gui.history.now and gui.history.now.voltage then
             cellResult = gui.history.now.voltage
         end
 
