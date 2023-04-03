@@ -19,7 +19,7 @@ function lib.new()
         tasks = {}
     }
 
-    function scheduler.add(name, interval, f, ...)
+    function scheduler.add(name, execute_immediately, interval, f, ...)
         if scheduler.tasks[name] == nil then
             --print("adding task " .. name)
             task = {}
@@ -27,8 +27,9 @@ function lib.new()
             task['interval'] = interval --Interval at which this should be true
             task['last_second'] = -1 -- last interval that the ready flag was set
             task['ready'] = false -- the value as to if this is ready for use
+            task['execute_immediately'] = execute_immediately
             task['f'] = f -- the funciton to call
-            task['f_args'] = {...}
+            task['f_args'] = { ... }
             scheduler.tasks[name] = task
         end
     end
@@ -39,18 +40,24 @@ function lib.new()
 
     function scheduler.tick()
         for varName, task in pairs(scheduler.tasks) do
-            local deltaTime = getRtcTime() - task.startTime
-            if (deltaTime % task.interval) == 0 and deltaTime > task.last_second then  -- only set true once per second
-                task.ready = true
-                task.last_second = deltaTime + 1
-                if task.f then
-                    task.f(unpack(task.f_args))
+            local currentTime = getRtcTime()
+            local deltaTime = currentTime - task.startTime
+            if (task.execute_immediately == false and currentTime ~= task.startTime) or task.execute_immediately then
+                if  (deltaTime % task.interval) == 0 and deltaTime > task.last_second then
+                    -- only set true once per second
+                    task.ready = true
+                    task.last_second = deltaTime + 1
+                    if task.f then
+                        task.f(unpack(task.f_args))
+                    end
+                    --print(varName .. " " .. deltaTime .. "/" .. task.interval .. " mod: " .. deltaTime % task.interval .. " ready: " .. tostring(task.ready))
+                elseif (deltaTime % task.interval) > 0 and deltaTime > task.last_second then
+                    -- we are not on time, set false
+                    --_G[varName] = false
+                    task.ready = false
                 end
-            elseif (deltaTime % task.interval) > 0 and deltaTime > task.last_second then -- we are not on time, set false
-                --_G[varName] = false
-                task.ready = false
+                --print(varName .. " " .. deltaTime .. "/" .. task.interval .. " mod: " .. deltaTime % task.interval .. " ready: " .. tostring(task.ready))
             end
-            --print(varName .. " " .. deltaTime .. "/" .. task.interval .. " mod: " .. deltaTime % task.interval .. " ready: " .. tostring(task.ready))
         end
     end
 
@@ -70,7 +77,7 @@ function lib.new()
     end
 
     function scheduler.reset()
-        for i,v in pairs(scheduler.tasks) do
+        for i, v in pairs(scheduler.tasks) do
             if i ~= 'reset_sw' then
                 scheduler.tasks[i] = nil
             end
