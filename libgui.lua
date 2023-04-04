@@ -67,7 +67,7 @@ function lib.new(History)
         lcd.drawText(wgt.zone.x + 20, wgt.zone.y + 2, topLine, MIDSIZE + CUSTOM_COLOR + blinkWhenZero)
     end
 
-    function gui.refreshZoneMedium(wgt, batRemPer, batRemainmAh)
+    function gui.refreshZoneMedium(wgt, batRemainmAh, batRemPer)
         --- Size is 225x98 1/4th  (no sliders/trim)
         gui.drawBattery(0, 0, wgt, batRemPer, batRemainmAh)
     end
