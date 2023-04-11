@@ -32,7 +32,7 @@ function lib.new()
 
 
         -- Announcements
-        soundDirPath = "/WIDGETS/mahRe2/sounds/", -- where you put the sound files
+        soundDirPath = "/WIDGETS/" .. name .. "/sounds/", -- where you put the sound files
         AnnouncePercentRemaining = true, -- true to turn on, false for off
 
         -- OpenTX Global Variables (GV)
@@ -51,6 +51,7 @@ function lib.new()
         -- Use GV[6] for GV6, GV[7] for GV7 and so on
         GVCellCount = GV[6], -- Read the number of cells
         GVBatCap = GV[7], -- Read Battery Capacity, 8 for 800mAh, 22 for 2200mAh
+        GVBatNumber = GV[8], -- Read the id of the battery that is currently in use
         -- The corresponding must be set under the FLIGHT MODES
         -- screen on the Tx.
         -- If the GV is 0 or not set on the Tx then
@@ -199,7 +200,7 @@ function lib.new()
                     -- print(string.format("i: %d v: %f j: %d v: %f", i, v1, j,v2))
                     if i ~= j and (math.abs(v1 - v2) > service.VoltageDelta) then
                         --print(string.format("i: %d v: %f j: %d v: %f", i, v1, j,v2))
-                        service.scheduler.add("icw", 10, playFile, service.soundDirPath .. "icw.wav")
+                        service.scheduler.add("icw", true, 10, playFile, service.soundDirPath .. "icw.wav")
                         return
                     end
                 end
@@ -215,11 +216,11 @@ function lib.new()
         if service.CellCount > 0 then
             if type(voltageSensorValue) == "table" and #voltageSensorValue ~= service.CellCount then
                 --print(string.format("service.CellCount: %d tableSize: %d", service.CellCount, tableSize))
-                service.scheduler.add("mcw", 10, playFile, service.soundDirPath .. "mcw.wav")
+                service.scheduler.add("mcw", true, 10, playFile, service.soundDirPath .. "mcw.wav")
                 return
             elseif service.VoltageSensor == "VFAS" and type(voltageSensorValue) == "number" and (service.CellCount * 3.2) > voltageSensorValue then
                 --print(string.format("vfas missing cell: %d", voltageSensorValue))
-                service.scheduler.add("mcw", 10, playFile, service.soundDirPath .. "mcw.wav")
+                service.scheduler.add("mcw", true, 10, playFile, service.soundDirPath .. "mcw.wav")
                 return
             end
             service.scheduler.remove("mcw")
@@ -274,23 +275,35 @@ function lib.new()
         -- print("reset_sw: " .. getValue(service.SwReset))
         if service.SwReset ~= "" then
             -- Update switch position
-            --if ResetDebounced and HasSecondsElapsed(2) and -1024 ~= getValue(service.SwReset) then -- reset switch
             local debounced = service.scheduler.check('reset_sw')
+            --print("debounced: " .. tostring(debounced))
             if (debounced == nil or debounced == true) and -1024 ~= getValue(service.SwReset) then
                 -- reset switch
-                service.scheduler.add('reset_sw', 2)
-                service.scheduler.clear('reset_sw')
-                print("reset switch toggled")
-                service.CheckBatNotFull = true
-                service.VoltsNow = 0
-                service.scheduler.reset()
-                service.history = libhistory.new(service.ThrottleId, service.CurrentSensor, service.VoltageSensor)
-                service.gui.reset(history)
+                service.scheduler.add('reset_sw', false, 2) -- add the reset switch to the scheduler
+                --print("reset start task: " .. tostring(service.scheduler.tasks['reset_sw'].ready))
+                service.scheduler.clear('reset_sw') -- set the reset switch to false in the scheduler so we don't run again
+                --print("reset task: " .. tostring(service.scheduler.tasks['reset_sw'].ready))
+                --print("reset switch toggled - debounced: " .. tostring(debounced))
+                service.history.write(service.GVFlightMode, service.GVBatNumber, service.finishReset)
+
+                --service.service.finishReset()
                 --print("reset event")
             elseif -1024 == getValue(service.SwReset) then
+                --print("reset switch released")
                 service.scheduler.remove('reset_sw')
             end
         end
+    end
+
+    function service.finishReset()
+        print("service.finishReset()")
+        service.CheckBatNotFull = true
+        service.VoltsNow = 0
+        service.scheduler.reset()
+        service.history = libhistory.new(service.ThrottleId, service.CurrentSensor, service.VoltageSensor)
+        --print("reset created new history: " .. tostring(service.history))
+        service.gui.reset(service.history)
+        --print("reset gui history: " .. tostring(service.gui.history))
     end
 
     function service.bg_func()
@@ -357,17 +370,24 @@ function lib.new()
         -- Called periodically when screen is visible
         if event == nil then
             -- Widget mode
-            service.bg_func()
-            if wgt.zone.w > 380 and wgt.zone.h > 165 then
-                service.gui.refreshZoneXLarge(wgt, service.BatRemainmAh, service.BatRemPer)
-            elseif wgt.zone.w > 180 and wgt.zone.h > 145 then
-                service.gui.refreshZoneLarge(wgt, service.BatRemainmAh, service.BatRemPer)
-            elseif wgt.zone.w > 170 and wgt.zone.h > 65 then
-                service.gui.refreshZoneMedium(wgt, service.BatRemainmAh, service.BatRemPer)
-            elseif wgt.zone.w > 150 and wgt.zone.h > 28 then
-                service.gui.refreshZoneSmall(wgt, service.BatRemainmAh, service.BatRemPer)
-            elseif wgt.zone.w > 65 and wgt.zone.h > 35 then
-                service.gui.refreshZoneTiny(wgt, service.BatRemainmAh, service.BatRemPer)
+            writing = service.history.writing or false
+            --print(service.history.dataSize .. " writing: " .. tostring(writing))
+            if writing then
+                service.history.write(service.GVFlightMode, service.GVBatNumber, service.finishReset)
+                service.gui.writingZoneXLarge(wgt)
+            else
+                service.bg_func()
+                if wgt.zone.w > 380 and wgt.zone.h > 165 then
+                    service.gui.refreshZoneXLarge(wgt, service.BatRemainmAh, service.BatRemPer)
+                elseif wgt.zone.w > 180 and wgt.zone.h > 145 then
+                    service.gui.refreshZoneLarge(wgt, service.BatRemainmAh, service.BatRemPer)
+                elseif wgt.zone.w > 170 and wgt.zone.h > 65 then
+                    service.gui.refreshZoneMedium(wgt, service.BatRemainmAh, service.BatRemPer)
+                elseif wgt.zone.w > 150 and wgt.zone.h > 28 then
+                    service.gui.refreshZoneSmall(wgt, service.BatRemainmAh, service.BatRemPer)
+                elseif wgt.zone.w > 65 and wgt.zone.h > 35 then
+                    service.gui.refreshZoneTiny(wgt, service.BatRemainmAh, service.BatRemPer)
+                end
             end
         else
             print("full screen")

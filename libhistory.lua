@@ -10,8 +10,9 @@ local lib = { }
 function lib.new(tid, cs, vs)
     local history = {
         start = getTime(),
+        dateTime = getDateTime(),
         data = {},
-        data_size = 0,
+        dataSize = 0,
         now = nil,
         maxAmps = "-----",
         maxWatts = "-----",
@@ -19,7 +20,11 @@ function lib.new(tid, cs, vs)
         currentSensor = cs,
         voltageSensor = vs,
         pause_start_time = nil,
-        cellLowVoltage = {}              --the low value of each cell
+        cellLowVoltage = {"------","------","------","------","------","------","------","------"}, --the low value of each cell
+        log = nil,
+        writing = false,
+        writingIndex = 0,
+        writingCount = 0
     }
 
     function history.is_paused(rawThrottle, current_time)
@@ -105,7 +110,7 @@ function lib.new(tid, cs, vs)
     end
 
     function history.add(now)
-        --print("history.data_size: " .. history.data_size)
+        --print("history.dataSize: " .. history.dataSize)
 
         if not history.checkVoltageDataType(now.voltage) then
             --print("invalid voltage type detected for ", history.voltageSensor)
@@ -117,20 +122,19 @@ function lib.new(tid, cs, vs)
             return
         end
 
-        if history.data_size > 0 and now.time == history.data[history.data_size].time then
+        if history.dataSize > 0 and now.time == history.data[history.dataSize].time then
             --print("duplicate tick")
             return
         end
 
-        if history.data_size == 0 or
-                now.rawThrottle ~= history.data[history.data_size].rawThrottle or
-                now.amps ~= history.data[history.data_size].amps or
-                not history.compareVoltage(now.voltage, history.data[history.data_size].voltage)
+        if history.dataSize == 0 or
+                now.rawThrottle ~= history.data[history.dataSize].rawThrottle or
+                now.amps ~= history.data[history.dataSize].amps or
+                not history.compareVoltage(now.voltage, history.data[history.dataSize].voltage)
         then
             --print("added history")
-            history.data_size = history.data_size + 1
-            history.data[history.data_size] = now
-            history.now = now
+            history.dataSize = history.dataSize + 1
+            history.data[history.dataSize] = now
             history.getMaxValues()
         end
     end
@@ -142,24 +146,22 @@ function lib.new(tid, cs, vs)
         local now = {} -- placeholder for current data
         now.time = deltaTime
         now["rawThrottle"] = getValue(history.throttleId)
-        if not history.is_paused(now["rawThrottle"], time) then
-            --print("deltaTime: " .. deltaTime)
-            --print("rawThrottle: " .. now.rawThrottle)
-            -- CurrentSensor is defined in the main.lua
-            if history.currentSensor ~= "" then
-                now.amps = getValue( history.currentSensor )
-            else
-                now.amps = 0
-            end
-
-            if history.voltageSensor ~= "" then
-                now.voltage  = getValue(history.voltageSensor)
-            else
-                now.voltage = 0
-            end
-            history.add(now)
-            --print("data data_size=" .. history.len())
+        if history.currentSensor ~= "" then
+            now.amps = getValue( history.currentSensor )
+        else
+            now.amps = 0
         end
+
+        if history.voltageSensor ~= "" then
+            now.voltage  = getValue(history.voltageSensor)
+        else
+            now.voltage = 0
+        end
+        history.now = now
+        if not history.is_paused(now["rawThrottle"], time) then
+            history.add(now)
+        end
+        --print("data dataSize=" .. history.len())
     end
 
     function history.getTotalVolts()
@@ -173,7 +175,9 @@ function lib.new(tid, cs, vs)
                 local volts = 0
                 for i,v in ipairs(history.now.voltage) do
                     volts = volts + v
-                    if history.cellLowVoltage[i] == nil or history.cellLowVoltage[i] > v then
+                    if history.cellLowVoltage[i] == nil or
+                            history.cellLowVoltage[i] == "------" or
+                            history.cellLowVoltage[i] > v then
                         history.cellLowVoltage[i] = v
                     end
                 end
@@ -196,6 +200,68 @@ function lib.new(tid, cs, vs)
           end
         end
       end
+    end
+
+    function history.write(gvFlightMode, gvBatNumber, finishResetFunc)
+        if history.dataSize > 100 then
+            if history.writingIndex == 0 then
+                history.writing = true
+                local batteryNumber = model.getGlobalVariable(gvBatNumber, gvFlightMode)
+                local logTime = history.dateTime.year .. history.dateTime.mon .. history.dateTime.day .. "_" .. history.dateTime.hour .. history.dateTime.min
+                local logPath = "/LOGS/" .. name .. "_bat_" .. batteryNumber .. "_" .. history.dataSize .. "_" .. logTime .. ".csv"
+                history.log = io.open(logPath, "w")
+                io.write(history.log,"time,throttle,amps,")
+                if history.voltageSensor == 'Cels' then
+                    io.write(history.log, "v1,v2,v3,v4,v5,v6,v7,v8\n")
+                else
+                    io.write(history.log, "voltage\n")
+                end
+            end
+            print("history.writingIndex: " .. tostring(history.writingIndex))
+            print("history.dataSize: " .. tostring(history.dataSize))
+            print("history.writingCount: " .. tostring(history.writingCount))
+            loop_end = history.dataSize
+            if history.writingIndex < history.dataSize then
+                loop_start = history.writingIndex + 1
+                -- figure out where to stop the loop
+                local loop_end = history.writingIndex + 100
+                if loop_end > history.dataSize then
+                    loop_end = history.dataSize
+                end
+
+                --print('size: '.. history.dataSize ..' loop_start: ' .. loop_start .. " loop_end: " .. loop_end)
+
+                for i=loop_start, loop_end, 1 do
+                    local v = history.data[i]
+                    local line = v.time .. "," .. v.rawThrottle .. "," .. v.amps
+                    if type(v.voltage) == 'number' then
+                        line = line .. "," .. v.voltage
+                    elseif type(v.voltage) == 'table' then
+                        for j, v_val in pairs(v.voltage) do
+                            line = line .. "," .. v_val
+                        end
+                    else
+                        line = line .. "," .. 0
+                    end
+                    io.write(history.log, line .. "\n")
+                end
+                --print('after size: '.. history.dataSize ..' loop_start: ' .. loop_start .. " loop_end: " .. loop_end)
+            end
+
+            if loop_end == history.dataSize and history.writingCount == 100 then
+                --print("end writing")
+                io.close(history.log)
+                history.writingIndex = 0
+                history.writing = false -- we have printed everything possible, return back false for printing status
+                finishResetFunc()
+                history.writingCount = 0
+                return
+            end
+            history.writingIndex = loop_end
+            history.writing = true -- we are still printing, return back true for printing status and the index
+            history.writingCount = history.writingCount + 1
+            --print("after " .. history.writingIndex .. " " .. tostring(history.writing))
+        end
     end
 
     return history

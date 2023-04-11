@@ -133,6 +133,11 @@ function lib.new(History)
         lcd.drawText(wgt.zone.x + 185, wgt.zone.y + 85, string.format("%.2fV", voltsNow), XXLSIZE + gui.color)
     end
 
+    function gui.writingZoneXLarge(wgt)
+        local fontSize = 60
+        lcd.drawText(wgt.zone.x + 200, wgt.zone.y + fontSize, "Writing to SD CARD", DBLSIZE + CENTER + VCENTER + BLINK)
+    end
+
     function gui.formatCellVoltage(voltage)
         local vColor
         if type(voltage) == "number" then
@@ -157,13 +162,19 @@ function lib.new(History)
         local cellResult = {}
         if gui.history and gui.history.now and gui.history.now.voltage then
             cellResult = gui.history.now.voltage
+            if type(cellResult) ~= 'table' then
+                cellResult = {"------","------","------","------","------","------","------","------"}
+            end
         end
+
 
         for i = 1, 7, 2 do
             cell1, cell1Color, cell1Blink = gui.formatCellVoltage(cellResult[i], gui.color)
-            history1, history1Color, history1Blink = gui.formatCellVoltage(gui.history.cellLowVoltage[i], gui.color)
+            local lowCellVoltage = gui.history.cellLowVoltage[i] or "------"
+            history1, history1Color, history1Blink = gui.formatCellVoltage(lowCellVoltage, gui.color)
             cell2, cell2Color, cell2Blink = gui.formatCellVoltage(cellResult[i + 1], gui.color)
-            history2, history2Color, history2Blink = gui.formatCellVoltage(gui.history.cellLowVoltage[i + 1], gui.color)
+            lowCellVoltage = gui.history.cellLowVoltage[i + 1] or "------"
+            history2, history2Color, history2Blink = gui.formatCellVoltage(lowCellVoltage, gui.color)
 
             -- C1: C.cc/H.hh  C2: C.cc/H.hh
             lcd.drawText(wgt.zone.x, wgt.zone.y + 10 * (i - 1), string.format("C%d:", i), gui.color)
@@ -176,6 +187,7 @@ function lib.new(History)
             lcd.drawText(wgt.zone.x + 155, wgt.zone.y + 10 * (i - 1), string.format("/"), gui.color)
             lcd.drawText(wgt.zone.x + 160, wgt.zone.y + 10 * (i - 1), string.format("%s", history2), history2Color + history2Blink)
         end
+
     end
 
     function gui.drawBattery(xOrigin, yOrigin, wgt, batRemPer, batRemainmAh)

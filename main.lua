@@ -99,7 +99,7 @@
 -- GV7: The battery capacity, 8 for 800mAh, 2200 for 2200mAh
 
 local Title = "Flight Battery Monitor"
-local name = "mahRe2"
+name = "mahRe2"
 
 -- Do not change the next line
 GV = {[1] = 0, [2] = 1, [3] = 2,[4] = 3,[5] = 4,[6] = 5, [7] = 6, [8] = 7, [9] = 8}
@@ -158,11 +158,6 @@ local function create(zone, options)
 	libhistory = libhistory or loadHistory()
 	libgui = libgui or loadGui()
 	libservice = libservice or loadService()
-	if libservice then
-		print("libservice is not nil")
-	else
-		print("libservice is nil")
-	end
 	service = libservice.new()
 	service.init_func()
 	local Context = { zone = zone, options = options }
@@ -181,5 +176,5 @@ local function refresh(wgt, event, touchState)
 	return service.refresh(wgt, event, touchState)
 end
 
-return { name="mahRe2", options=options, create=create, update=update,
+return { name=name, options=options, create=create, update=update,
          refresh=refresh, background=background }
