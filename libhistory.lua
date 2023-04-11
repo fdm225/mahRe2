@@ -217,9 +217,9 @@ function lib.new(tid, cs, vs)
                     io.write(history.log, "voltage\n")
                 end
             end
-            print("history.writingIndex: " .. tostring(history.writingIndex))
-            print("history.dataSize: " .. tostring(history.dataSize))
-            print("history.writingCount: " .. tostring(history.writingCount))
+            --print("history.writingIndex: " .. tostring(history.writingIndex))
+            --print("history.dataSize: " .. tostring(history.dataSize))
+            --print("history.writingCount: " .. tostring(history.writingCount))
             loop_end = history.dataSize
             if history.writingIndex < history.dataSize then
                 loop_start = history.writingIndex + 1
